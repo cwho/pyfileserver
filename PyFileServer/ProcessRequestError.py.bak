@@ -1,0 +1,60 @@
+import os
+import time
+"""
+WSGI Middleware component to catch ProcessRequestErrors and return a response based on the code.
+"""
+
+
+class ProcessRequestError(Exception):
+   def __init__(self, value):
+      self.value = value
+   def __str__(self):
+      return repr(self.value)  
+      
+      
+      
+class ErrorPrinter(object):
+   def __init__(self, application, server_descriptor=None):
+      self._application = application
+      self._server_descriptor = server_descriptor
+      self._init_keys()
+
+   def _init_keys(self):
+      self.ERROR_DESCRIPTIONS = dict()
+      self.ERROR_DESCRIPTIONS[404] = "404 Not Found"
+      self.ERROR_DESCRIPTIONS[403] = "403 Forbidden"
+      self.ERROR_DESCRIPTIONS[500] = "500 Internal Server Error"
+      
+      self.ERROR_RESPONSES = dict()
+      self.ERROR_RESPONSES[404] = "The specified resource was not found"
+      self.ERROR_RESPONSES[403] = "Access denied to the specified resource"
+      self.ERROR_RESPONSES[500] = "An internal server error occured"
+
+      
+   def __call__(self, environ, start_response):
+      try:
+         return self._application(environ, start_response)
+      except ProcessRequestError, e:
+         e = int(e)
+         print self.ERROR_DESCRIPTIONS.has_key(e)
+         print repr(self.ERROR_DESCRIPTIONS)
+         if e in self.ERROR_DESCRIPTIONS:
+            respcode = self.ERROR_DESCRIPTIONS[e]
+         else:
+            e = 500
+            respcode = "500 Internal Server Error"
+                  
+         start_response(respcode, [('Content-type', 'text/html')])
+         
+         respbody = '<html><head><title>' + respcode + '</title></head><body><H1>' + respcode + '</H1>' 
+         if e in self.ERROR_RESPONSES:
+            respbody = respbody + self.ERROR_RESPONSES[e] + '<HR>'
+         else:
+            respbody = respobdy + "Error<HR>" 
+         
+         if self._server_descriptor:
+            respbody = respbody + self._server_descriptor + '<BR>'
+         respbody = respbody + time.asctime(time.localtime()) + '</body></html>'        
+         return [respbody] 
+
+     
