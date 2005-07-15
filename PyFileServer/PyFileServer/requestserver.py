@@ -8,14 +8,11 @@ import mimetypes
 import cgi
 import re
 
-from paste import wsgilib
+from processrequesterrorhandler import ProcessRequestError
+import processrequesterrorhandler
 
-import MappingConfiguration
-from ProcessRequestErrorHandler import ProcessRequestError
-import ProcessRequestErrorHandler
-
-import HttpDateHelper
-import ETagProvider
+import httpdatehelper
+import etagprovider
 
 # CONSTANTS
 URL_SEP = '/'
@@ -27,41 +24,23 @@ reByteRangeSpecifier = re.compile("(([0-9]+)\-([0-9]*))")
 reSuffixByteRangeSpecifier = re.compile("(\-([0-9]+))")
 
 class RequestServer(object):
-   def __init__(self, srvconfig, infoHeader = None, etagprovider = ETagProvider.getETag):
-      self._srvcfg = srvconfig
+   def __init__(self, infoHeader = None, etagproviderfunc = etagprovider.getETag):
       self._infoHeader = infoHeader
-      self._etagprovider = etagprovider
+      self._etagprovider = etagproviderfunc
       
    def __call__(self, environ, start_response):
 
+      self._srvcfg = environ['pyfileserver.config']
+      assert 'pyfileserver.mappedrealm' in environ
+      assert 'pyfileserver.mappedrealmrelativeurl' in environ
+      assert 'pyfileserver.mappedrealmlocaldir' in environ
+       
       requestmethod =  environ['REQUEST_METHOD'].upper()   
-      requestpath =  urllib.unquote(environ['PATH_INFO'])
-      
-      if requestpath == '*' and requestmethod == 'OPTIONS':
-         return doOPTIONSGeneric(environ, start_response)
-      
-      mapcfg = self._srvcfg['config_mapping']
-      mapcfgkeys = mapcfg.keys()
-      mapcfgkeys.sort()
-      mapcfgkeys.reverse()
-      mapdirprefix = ''
-      mapdirprefixfound = 0
-      for tmp_mapdirprefix in mapcfgkeys:
-         if self._srvcfg['MapKeysCaseSensitive'] == 1: 
-            if requestpath == tmp_mapdirprefix or requestpath.startswith(tmp_mapdirprefix + URL_SEP):
-               mapdirprefixfound = 1
-               mapdirprefix = tmp_mapdirprefix   
-               break         
-         else:
-            if requestpath.upper() == tmp_mapdirprefix.upper() or requestpath.upper().startswith(tmp_mapdirprefix.upper() + URL_SEP):
-               mapdirprefixfound = 1
-               mapdirprefix = tmp_mapdirprefix   
-               break         
-   
-      if mapdirprefixfound == 0:
-         raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_NOT_FOUND)
-            
-      relativepath = requestpath[len(mapdirprefix):]
+
+      mapdirprefix = environ['pyfileserver.mappedrealm']
+      relativepath = environ['pyfileserver.mappedrealmrelativeurl']
+      localheadpath =  environ['pyfileserver.mappedrealmlocaldir']
+
       relativepath = relativepath.replace(URL_SEP, os.sep)
    
       if relativepath.endswith(os.sep):
@@ -71,13 +50,12 @@ class RequestServer(object):
       if relativepath != '':          # avoid adding of .s
          normrelativepath = os.path.normpath(relativepath)   
          
-      # Note: Firefox apparently resolves .. and . on client side before sending it to server. IE doesnt.
-        
+      # Note: Firefox apparently resolves .. and . on client side before sending it to server. IE doesnt.        
       if self._srvcfg['AllowRelativePaths'] == 0:
          if normrelativepath != relativepath:
-            raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_FORBIDDEN)
+            raise ProcessRequestError(processrequesterrorhandler.HTTP_FORBIDDEN)
       
-      mappedpath = mapcfg[mapdirprefix] + os.sep + normrelativepath
+      mappedpath = localheadpath + os.sep + normrelativepath
       
       if(normrelativepath != ""):
          displaypath = mapdirprefix + normrelativepath.replace(os.sep, URL_SEP)
@@ -90,7 +68,7 @@ class RequestServer(object):
          elif os.path.isfile(mappedpath):
             return self.doGETPOSTHEADFile(mappedpath, requestmethod, environ, start_response)
          else:
-            raise self.ProcessRequestError(ProcessRequestErrorHandler.HTTP_NOT_FOUND)               
+            raise self.ProcessRequestError(processrequesterrorhandler.HTTP_NOT_FOUND)               
       elif requestmethod == 'PUT':
          return doPUTFile(mappedpath, environ, start_response)
       elif requestmethod == 'DELETE':
@@ -100,16 +78,16 @@ class RequestServer(object):
       elif requestmethod == 'TRACE':
          return doTRACE(mappedpath, environ, start_response)
       else:
-         raise self.ProcessRequestError(ProcessRequestErrorHandler.HTTP_METHOD_NOT_ALLOWED)
+         raise self.ProcessRequestError(processrequesterrorhandler.HTTP_METHOD_NOT_ALLOWED)
       
 
    #TRACE pending, but not essential in this case
    def doTRACE(self, mappedpath, environ, start_response):
-      raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_NOT_IMPLEMENTED)
+      raise ProcessRequestError(processrequesterrorhandler.HTTP_NOT_IMPLEMENTED)
 
    def doDELETEFile(self, mappedpath, environ, start_response):
       if not os.path.isfile(mappedpath):
-         raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_NOT_FOUND)
+         raise ProcessRequestError(processrequesterrorhandler.HTTP_NOT_FOUND)
 
       statresults = os.stat(mappedpath)
       mode = statresults[stat.ST_MODE]      
@@ -131,7 +109,7 @@ class RequestServer(object):
             ifmatchtag = ifmatchtag.strip(" \"\t")
             if ifmatchtag == entitytag or ifmatchtag == '*':
                break   
-            raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_PRECONDITION_FAILED)
+            raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
          
       
       # If-None-Match 
@@ -145,24 +123,24 @@ class RequestServer(object):
          for ifmatchtag in ifmatchlist:
             ifmatchtag = ifmatchtag.strip(" \"\t")
             if ifmatchtag == entitytag or ifmatchtag == '*':
-               raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_PRECONDITION_FAILED)
+               raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
          ignoreifmodifiedsince = True
 
       if 'HTTP_IF_UNMODIFIED_SINCE' in environ:
-         ifunmodtime = HttpDateHelper.getsecstime(environ['HTTP_IF_UNMODIFIED_SINCE'])
+         ifunmodtime = httpdatehelper.getsecstime(environ['HTTP_IF_UNMODIFIED_SINCE'])
          if ifunmodtime:
             if ifunmodtime <= lastmodified:
-               raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_PRECONDITION_FAILED)
+               raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
 
       if 'HTTP_IF_MODIFIED_SINCE' in environ and not ignoreifmodifiedsince:
-         ifmodtime = HttpDateHelper.getsecstime(environ['HTTP_IF_MODIFIED_SINCE'])
+         ifmodtime = httpdatehelper.getsecstime(environ['HTTP_IF_MODIFIED_SINCE'])
          if ifmodtime:
             if ifmodtime > lastmodified:
-               raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_NOT_MODIFIED)
+               raise ProcessRequestError(processrequesterrorhandler.HTTP_NOT_MODIFIED)
 
       os.unlink(mappedpath)
 
-      start_response('204 No Content', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Date',HttpDateHelper.getstrftime())])
+      start_response('204 No Content', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Date',httpdatehelper.getstrftime())])
 
       return ['']
 
@@ -170,10 +148,10 @@ class RequestServer(object):
 
    def doPUTFile(self, mappedpath, environ, start_response):
       if os.path.isdir(mappedpath):
-         raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_BAD_REQUEST)
+         raise ProcessRequestError(processrequesterrorhandler.HTTP_BAD_REQUEST)
 
       if not os.path.isdir(os.path.dirname(mappedpath)):
-         raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_BAD_REQUEST)
+         raise ProcessRequestError(processrequesterrorhandler.HTTP_BAD_REQUEST)
 
       isnewfile = True
       if os.path.isfile(mappedpath):
@@ -194,14 +172,14 @@ class RequestServer(object):
 
       if 'HTTP_IF_MATCH' in environ:
          if isnewfile:
-            raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_PRECONDITION_FAILED)
+            raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
          else:
             ifmatchlist = environ['HTTP_IF_MATCH'].split(",")
             for ifmatchtag in ifmatchlist:
                ifmatchtag = ifmatchtag.strip(" \"\t")
                if ifmatchtag == entitytag or ifmatchtag == '*':
                   break   
-               raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_PRECONDITION_FAILED)
+               raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
          
       
       # If-None-Match 
@@ -218,28 +196,28 @@ class RequestServer(object):
             for ifmatchtag in ifmatchlist:
                ifmatchtag = ifmatchtag.strip(" \"\t")
                if ifmatchtag == entitytag or ifmatchtag == '*':
-                  raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_PRECONDITION_FAILED)
+                  raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
             ignoreifmodifiedsince = True
 
       if not isnewfile and 'HTTP_IF_UNMODIFIED_SINCE' in environ:
-         ifunmodtime = HttpDateHelper.getsecstime(environ['HTTP_IF_UNMODIFIED_SINCE'])
+         ifunmodtime = httpdatehelper.getsecstime(environ['HTTP_IF_UNMODIFIED_SINCE'])
          if ifunmodtime:
             if ifunmodtime <= lastmodified:
-               raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_PRECONDITION_FAILED)
+               raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
 
       if not isnewfile and 'HTTP_IF_MODIFIED_SINCE' in environ and not ignoreifmodifiedsince:
-         ifmodtime = HttpDateHelper.getsecstime(environ['HTTP_IF_MODIFIED_SINCE'])
+         ifmodtime = httpdatehelper.getsecstime(environ['HTTP_IF_MODIFIED_SINCE'])
          if ifmodtime:
             if ifmodtime > lastmodified:
-               raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_NOT_MODIFIED)
+               raise ProcessRequestError(processrequesterrorhandler.HTTP_NOT_MODIFIED)
 
       ## Test for unsupported stuff
 
       if 'HTTP_CONTENT_ENCODING' in environ:
-         raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_NOT_IMPLEMENTED)
+         raise ProcessRequestError(processrequesterrorhandler.HTTP_NOT_IMPLEMENTED)
          
       if 'HTTP_CONTENT_RANGE' in environ:
-         raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_NOT_IMPLEMENTED)
+         raise ProcessRequestError(processrequesterrorhandler.HTTP_NOT_IMPLEMENTED)
       
       ## Start Content Processing
       
@@ -281,36 +259,36 @@ class RequestServer(object):
       fileobj.close()
       
       if isnewfile:
-         start_response('201 Created', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Date',HttpDateHelper.getstrftime())])
+         start_response('201 Created', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Date',httpdatehelper.getstrftime())])
       else:
-         start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Date',HttpDateHelper.getstrftime())])
+         start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Date',httpdatehelper.getstrftime())])
       
       return ['']
       
       
    def doOPTIONSGeneric(self, environ, start_response):
-      start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET POST PUT DELETE'), ('Allow-Ranges','bytes'), ('Date',HttpDateHelper.getstrftime())])
+      start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Date',httpdatehelper.getstrftime())])
       return ['']      
    
    def doOPTIONSSpecific(self, mappedpath, environ, start_response):
       if os.path.isdir(mappedpath):
-         start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET POST'), ('Date',HttpDateHelper.getstrftime())])      
+         start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET POST'), ('Date',httpdatehelper.getstrftime())])      
       elif os.path.isfile(mappedpath):
-         start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET POST PUT DELETE'), ('Allow-Ranges','bytes'), ('Date',HttpDateHelper.getstrftime())])            
+         start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET POST PUT DELETE'), ('Allow-Ranges','bytes'), ('Date',httpdatehelper.getstrftime())])            
       elif os.path.isdir(os.path.dirname(mappedpath)):
-         start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS PUT'), ('Date',HttpDateHelper.getstrftime())])      
+         start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS PUT'), ('Date',httpdatehelper.getstrftime())])      
       else:
-         raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_NOT_FOUND)         
+         raise ProcessRequestError(processrequesterrorhandler.HTTP_NOT_FOUND)         
       return '';      
 
 
 
    def doGETPOSTHEADDirectory(self, mappedpath, displaypath, normrelativepath, requestmethod, environ, start_response):
       if not os.path.isdir(mappedpath):
-         raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_NOT_FOUND)
+         raise ProcessRequestError(processrequesterrorhandler.HTTP_NOT_FOUND)
 
       if requestmethod == 'HEAD':
-         start_response('200 OK', [('Content-Type', 'text/html'), ('Date',HttpDateHelper.getstrftime())])
+         start_response('200 OK', [('Content-Type', 'text/html'), ('Date',httpdatehelper.getstrftime())])
          return ['']
 
 
@@ -356,12 +334,12 @@ class RequestServer(object):
 
    def processShowTree(self, mappedpath, displaypath, environ, start_response):
       proc_response = displaypath + '\n' + self.processTextPath(mappedpath, displaypath, -1)
-      start_response('200 OK', [('Content-Type', 'text/plain'), ('Date',HttpDateHelper.getstrftime())])
+      start_response('200 OK', [('Content-Type', 'text/plain'), ('Date',httpdatehelper.getstrftime())])
       return [proc_response]
    
    def processShowDirectory(self, mappedpath, displaypath, environ, start_response):
       proc_response = displaypath + '\n' + self.processTextPath(mappedpath, displaypath, 0)
-      start_response('200 OK', [('Content-Type', 'text/plain'), ('Date',HttpDateHelper.getstrftime())])
+      start_response('200 OK', [('Content-Type', 'text/plain'), ('Date',httpdatehelper.getstrftime())])
       return [proc_response]
 
          
@@ -395,14 +373,14 @@ class RequestServer(object):
           else:
              proc_response = proc_response + '<td>Unknown</td>' + '<td>' + str(statresults[stat.ST_SIZE]) + ' B </td>'
    
-          proc_response = proc_response + '<td>' + HttpDateHelper.getstrftime(statresults[stat.ST_MTIME]) + '</td>'
+          proc_response = proc_response + '<td>' + httpdatehelper.getstrftime(statresults[stat.ST_MTIME]) + '</td>'
           proc_response = proc_response + '</tr>\n'
    
       proc_response = proc_response + ('</table><hr>')
       proc_response = proc_response + self._infoHeader
-      proc_response = proc_response + ('<BR>') + HttpDateHelper.getstrftime()
+      proc_response = proc_response + ('<BR>') + httpdatehelper.getstrftime()
       proc_response = proc_response + ('</body></html>\n')
-      start_response('200 OK', [('Content-Type', 'text/html'), ('Date',HttpDateHelper.getstrftime())])
+      start_response('200 OK', [('Content-Type', 'text/html'), ('Date',httpdatehelper.getstrftime())])
       return [proc_response]
 
 
@@ -453,7 +431,7 @@ class RequestServer(object):
    def doGETPOSTHEADFile(self, mappedpath, requestmethod, environ, start_response):
    
       if not os.path.isfile(mappedpath):
-         raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_NOT_FOUND)
+         raise ProcessRequestError(processrequesterrorhandler.HTTP_NOT_FOUND)
          
       statresults = os.stat(mappedpath)
       mode = statresults[stat.ST_MODE]
@@ -477,7 +455,7 @@ class RequestServer(object):
             ifmatchtag = ifmatchtag.strip(" \"\t")
             if ifmatchtag == entitytag or ifmatchtag == '*':
                break   
-            raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_PRECONDITION_FAILED)
+            raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
       
       # If-None-Match 
       # If none of the entity tags match, then the server MAY perform the requested method as if the 
@@ -490,20 +468,20 @@ class RequestServer(object):
          for ifmatchtag in ifmatchlist:
             ifmatchtag = ifmatchtag.strip(" \"\t")
             if ifmatchtag == entitytag or ifmatchtag == '*':
-               raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_PRECONDITION_FAILED)
+               raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
          ignoreifmodifiedsince = True
 
       if 'HTTP_IF_UNMODIFIED_SINCE' in environ:
-         ifunmodtime = HttpDateHelper.getsecstime(environ['HTTP_IF_UNMODIFIED_SINCE'])
+         ifunmodtime = httpdatehelper.getsecstime(environ['HTTP_IF_UNMODIFIED_SINCE'])
          if ifunmodtime:
             if ifunmodtime <= lastmodified:
-               raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_PRECONDITION_FAILED)
+               raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
 
       if 'HTTP_IF_MODIFIED_SINCE' in environ and not ignoreifmodifiedsince:
-         ifmodtime = HttpDateHelper.getsecstime(environ['HTTP_IF_MODIFIED_SINCE'])
+         ifmodtime = httpdatehelper.getsecstime(environ['HTTP_IF_MODIFIED_SINCE'])
          if ifmodtime:
             if ifmodtime > lastmodified:
-               raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_NOT_MODIFIED)
+               raise ProcessRequestError(processrequesterrorhandler.HTTP_NOT_MODIFIED)
 
 
       ## Ranges      
@@ -511,7 +489,7 @@ class RequestServer(object):
       if 'HTTP_RANGE' in environ and 'HTTP_IF_RANGE' in environ:
          ifrange = environ['HTTP_IF_RANGE']
          #try as http-date first
-         secstime = HttpDateHelper.getsecstime(ifrange)
+         secstime = httpdatehelper.getsecstime(ifrange)
          if secstime:
             if lastmodified != secstime:
                doignoreranges = True
@@ -527,7 +505,7 @@ class RequestServer(object):
          listRanges, totallength = self.obtainContentRanges(environ['HTTP_RANGE'], filesize)
          if len(listRanges) == 0:
             #No valid ranges present
-            raise ProcessRequestError(ProcessRequestErrorHandler.HTTP_RANGE_NOT_SATISFIABLE)
+            raise ProcessRequestError(processrequesterrorhandler.HTTP_RANGE_NOT_SATISFIABLE)
 
          #More than one range present -> take only the first range, since multiple range returns require multipart, which is not supported         
          #obtainContentRanges supports more than one range in case the above behaviour changes in future
@@ -548,9 +526,9 @@ class RequestServer(object):
 
       responseHeaders = []
       responseHeaders.append(('Content-Length', rangelength))
-      responseHeaders.append(('Last-Modified', HttpDateHelper.getstrftime(lastmodified)))
+      responseHeaders.append(('Last-Modified', httpdatehelper.getstrftime(lastmodified)))
       responseHeaders.append(('Content-Type', mimetype))
-      responseHeaders.append(('Date', HttpDateHelper.getstrftime()))
+      responseHeaders.append(('Date', httpdatehelper.getstrftime()))
       responseHeaders.append(('ETag', '\"' + entitytag + '\"'))
       if ispartialranges:
          responseHeaders.append(('Content-Ranges', 'bytes ' + str(rangestart) + '-' + str(rangeend) + '/' + rangelength))

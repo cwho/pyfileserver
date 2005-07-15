@@ -1,6 +1,6 @@
 import os
 import time
-import HttpDateHelper
+import httpdatehelper
 
 
 """
@@ -65,16 +65,16 @@ class ErrorPrinter(object):
             respcode = str(evalue)
 
          if evalue in ERROR_RESPONSES:                  
-            start_response(respcode, [('Content-Type', 'text/html'), ('Date',HttpDateHelper.getstrftime())])
+            start_response(respcode, [('Content-Type', 'text/html'), ('Date',httpdatehelper.getstrftime())])
             
             respbody = '<html><head><title>' + respcode + '</title></head><body><H1>' + respcode + '</H1>' 
             respbody = respbody + ERROR_RESPONSES[evalue] + '<HR>'         
             if self._server_descriptor:
                respbody = respbody + self._server_descriptor + '<BR>'
-            respbody = respbody + HttpDateHelper.getstrftime() + '</body></html>'        
+            respbody = respbody + httpdatehelper.getstrftime() + '</body></html>'        
 
             return [respbody] 
          else:
-            start_response(respcode, [('Content-Type', 'text/html'), ('Content-Length', '0'), ('Date',HttpDateHelper.getstrftime())])
+            start_response(respcode, [('Content-Type', 'text/html'), ('Content-Length', '0'), ('Date',httpdatehelper.getstrftime())])
             return ['']
      
