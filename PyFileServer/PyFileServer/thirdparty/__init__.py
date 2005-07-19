@@ -1,1 +1,1 @@
-__all__ = ['gzipmiddleware']
+__all__ = ['gzipmiddleware','digestauth']

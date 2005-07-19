@@ -60,7 +60,10 @@ class RequestServer(object):
       if(normrelativepath != ""):
          displaypath = mapdirprefix + normrelativepath.replace(os.sep, URL_SEP)
       else:
-         displaypath = mapdirprefix + URL_SEP
+         displaypath = mapdirprefix 
+      
+      if os.path.isdir(mappedpath): 
+         displaypath = displaypath + URL_SEP
       
       if (requestmethod == 'GET' or requestmethod == 'POST' or requestmethod == 'HEAD'):
          if os.path.isdir(mappedpath): 

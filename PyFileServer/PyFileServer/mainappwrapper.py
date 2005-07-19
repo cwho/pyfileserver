@@ -1,4 +1,5 @@
 import os
+import atexit
 
 from requestserver import RequestServer
 from processrequesterrorhandler import ErrorPrinter
@@ -8,12 +9,15 @@ from pyfiledomaincontroller import PyFileServerDomainController
 
 from paste import pyconfig
 
+def deallocate():
+   print "App Deallocation Testing"
 
 """
 Main application executable. 
 
 Links request server with the other middleware portions
 """
+count1 = 0 
 
 class PyFileApp(object):
    
@@ -30,6 +34,12 @@ class PyFileApp(object):
       application = ErrorPrinter(application, self._infoHeader) 
       
       self._application = application
+      print "App Initialization"
+      atexit.register(deallocate)
+#      globals()['count1'] = globals()['count1'] + 1
+#      if globals()['count1'] == 2:
+#         raise Exception()
+
  
    def __call__(self, environ, start_response):
       environ['pyfileserver.config'] = self._srvcfg
