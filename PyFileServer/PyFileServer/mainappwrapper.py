@@ -1,23 +1,21 @@
 import os
 import atexit
 
-from requestserver import RequestServer
+from extrequestserver import RequestServer
 from processrequesterrorhandler import ErrorPrinter
 from httpauthentication import HTTPAuthenticator, SimpleDomainController
 from requestresolver import RequestResolver
 from pyfiledomaincontroller import PyFileServerDomainController
+from propertylibrary import PropertyManager
 
+import websupportfuncs
 from paste import pyconfig
-
-def deallocate():
-   print "App Deallocation Testing"
 
 """
 Main application executable. 
 
 Links request server with the other middleware portions
 """
-count1 = 0 
 
 class PyFileApp(object):
    
@@ -28,29 +26,31 @@ class PyFileApp(object):
       self._srvcfg = servcfg
       self._infoHeader = '<A href=\"mailto:' + self._srvcfg['Info_AdminEmail'] + '\">Administrator</A> at ' + self._srvcfg['Info_Organization']
       
-      application = RequestServer(self._infoHeader)      
-      application = HTTPAuthenticator(application, PyFileServerDomainController(servcfg), True, True, False)      
+      application = RequestServer(PropertyManager(os.getcwd() + os.sep + 'PyFileServer.dat'))      
+      application = HTTPAuthenticator(application, PyFileServerDomainController(servcfg), True, True, True)      
       application = RequestResolver(application)      
       application = ErrorPrinter(application, self._infoHeader) 
       
       self._application = application
-      print "App Initialization"
-      atexit.register(deallocate)
-#      globals()['count1'] = globals()['count1'] + 1
-#      if globals()['count1'] == 2:
-#         raise Exception()
 
  
    def __call__(self, environ, start_response):
       environ['pyfileserver.config'] = self._srvcfg
+      environ['pyfileserver.trailer'] = self._infoHeader
 
       print "---------------------------------------------"
-      # for debugging purposes
+#      # for debugging purposes
       for envitem in environ.keys():
-         if envitem == envitem.upper():
-            print "\t", envitem, "\t:\t", repr(environ[envitem]) 
+         if envitem == envitem.upper() and envitem.startswith('HTTP'):
+            print "\t", envitem, ":\t", repr(environ[envitem]) 
+         if envitem == 'REQUEST_METHOD':
+            print "\t", envitem, ":\t", repr(environ[envitem]) 
+         if envitem == 'PATH_INFO':
+            print "\t", envitem, ":\t", repr(environ[envitem]) 
+         if envitem == 'CONTENT_LENGTH':
+            print "\t", envitem, ":\t", repr(environ[envitem]) 
       # end
       print "---------------------------------------------"
-            
-      return iter(self._application(environ, start_response))
+#      print websupportfuncs.constructFullURL(environ)      
+      return self._application(environ, start_response)
       

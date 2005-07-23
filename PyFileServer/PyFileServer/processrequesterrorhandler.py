@@ -1,12 +1,14 @@
 import os
 import time
 import httpdatehelper
-
+import traceback
+import sys
 
 """
 WSGI Middleware component to catch ProcessRequestErrors and return a response based on the code.
 """
 
+HTTP_MEDIATYPE_NOT_SUPPORTED = 415
 HTTP_NOT_MODIFIED = 304
 HTTP_RANGE_NOT_SATISFIABLE = 416
 HTTP_PRECONDITION_FAILED = 412
@@ -14,11 +16,14 @@ HTTP_NOT_IMPLEMENTED = 501
 HTTP_BAD_REQUEST = 400
 HTTP_NOT_FOUND = 404
 HTTP_FORBIDDEN = 403
+HTTP_CONFLICT = 409
 HTTP_METHOD_NOT_ALLOWED = 405
 HTTP_INTERNAL_ERROR = 500
 
 ERROR_DESCRIPTIONS = dict()
 
+ERROR_DESCRIPTIONS[HTTP_MEDIATYPE_NOT_SUPPORTED] = "415 Media Type Not Supported"
+ERROR_DESCRIPTIONS[HTTP_CONFLICT] = '409 Conflict'
 ERROR_DESCRIPTIONS[HTTP_NOT_MODIFIED] = "304 Not Modified"
 ERROR_DESCRIPTIONS[HTTP_RANGE_NOT_SATISFIABLE] = "416 Range Not Satisfiable"
 ERROR_DESCRIPTIONS[HTTP_PRECONDITION_FAILED] = "412 Precondition Failed"
@@ -39,23 +44,23 @@ class ProcessRequestError(Exception):
    def __init__(self, value):
       self.value = value
    def __str__(self):
-      return repr(self.value)  
-      
-      
+      return repr(self.value)             
       
 class ErrorPrinter(object):
    def __init__(self, application, server_descriptor=None):
       self._application = application
       self._server_descriptor = server_descriptor
       
-   def __call__(self, environ, start_response):
+   def __call__(self, environ, start_response):      
       try:
          try:
-            return self._application(environ, start_response)
+            for v in iter(self._application(environ, start_response)):
+               yield v
          except ProcessRequestError, e:
             raise
-# Catch all exceptions to return as 500 Internal Error - disabled for debugging
+#Catch all exceptions to return as 500 Internal Error - disabled for debugging
 #         except:
+#            traceback.print_exc(10, sys.stdout) 
 #            raise ProcessRequestError(500)
       except ProcessRequestError, e:
          evalue = e.value
@@ -73,8 +78,8 @@ class ErrorPrinter(object):
                respbody = respbody + self._server_descriptor + '<BR>'
             respbody = respbody + httpdatehelper.getstrftime() + '</body></html>'        
 
-            return [respbody] 
+            yield respbody 
          else:
             start_response(respcode, [('Content-Type', 'text/html'), ('Content-Length', '0'), ('Date',httpdatehelper.getstrftime())])
-            return ['']
-     
+            yield ''
+      return
