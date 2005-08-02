@@ -27,7 +27,7 @@ SERVER_ERROR = """\
 
 class ExtHandler (BaseHTTPServer.BaseHTTPRequestHandler):
    
-   _SUPPORTED_METHODS = ['HEAD','GET','PUT','POST','OPTIONS','TRACE','DELETE','PROPFIND','PROPPATCH','MKCOL','COPY','MOVE']
+   _SUPPORTED_METHODS = ['HEAD','GET','PUT','POST','OPTIONS','TRACE','DELETE','PROPFIND','PROPPATCH','MKCOL','COPY','MOVE','LOCK','UNLOCK']
    
    def log_message (self, *args):
       pass

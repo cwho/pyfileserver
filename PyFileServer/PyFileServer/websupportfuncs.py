@@ -51,7 +51,7 @@ def getLevelUpURL(displayPath):
       if item!="":
          listItems2.append(item)
    listItems2.pop()
-   return URL_SEP + urllib.quote(URL_SEP.join(listItems2))
+   return URL_SEP + urllib.quote(URL_SEP.join(listItems2)) + URL_SEP
    
 def cleanUpURL(displayURL):
    listItems = displayURL.split(URL_SEP)
@@ -236,40 +236,77 @@ def constructFullURL(displaypath, environ):
 def getRelativeURL(fullurl, environ):
    return fullurl[len("http://" + environ['HTTP_HOST']):]
 
+reIfSeparator = re.compile('(\\<([^>]+)\\>)|(\\(([^\\)]+)\\))')
 reIfHeader = re.compile('\\<([^>]+)\\>([^<]+)')
 reIfTagList = re.compile('\\(([^)]+)\\)')
 reIfTagListContents = re.compile('(\S+)')
 
 def getIfHeaderDict(iftext):
-   listResources = reIfHeader.findall(iftext)
-   if len(listResources) == 0:
-      listResources = reIfHeader.findall('<*>'+iftext)
+   iftext = iftext.strip()
+   if not iftext.startswith('<'):
+      iftext = '<*>' + iftext   
+
    returnDict = dict([])
-   for (resApp, taglist) in listResources:
-      listTag = []
-      for listvar in reIfTagList.findall(taglist):
+   resource1 = '*'
+   for (tmpURLVar, URLVar, tmpContentVar, contentVar) in reIfSeparator.findall(iftext):
+      if tmpURLVar != '':
+         resource1 = URLVar         
+      else:
          listTagContents = []
          testflag = True
-         for listitem in reIfTagListContents.findall(listvar):            
+         for listitem in reIfTagListContents.findall(contentVar):            
             if listitem.upper() != 'NOT':
                if listitem.startswith('['):
                   listTagContents.append((testflag,'entity',listitem.strip('\"[]')))   
                else:
-                  listTagContents.append((testflag,'locktoken',listitem))            
+                  listTagContents.append((testflag,'locktoken',listitem.strip('<>')))            
             testflag = listitem.upper() != 'NOT'
+         
+         if resource1 in returnDict:
+            listTag = returnDict[resource1]
+         else:
+            listTag = []
+            returnDict[resource1] = listTag
          listTag.append(listTagContents)
-      returnDict[resApp] = listTag      
-   return returnDict         
+   return returnDict
+#
+#def getIfHeaderDict(iftext):
+#   listResources = reIfHeader.findall(iftext)
+#   if len(listResources) == 0:
+#      listResources = reIfHeader.findall('<*>'+iftext)
+#   returnDict = dict([])
+#   for (resApp, taglist) in listResources:
+#      listTag = []
+#      for listvar in reIfTagList.findall(taglist):
+#         listTagContents = []
+#         testflag = True
+#         for listitem in reIfTagListContents.findall(listvar):            
+#            if listitem.upper() != 'NOT':
+#               if listitem.startswith('['):
+#                  listTagContents.append((testflag,'entity',listitem.strip('\"[]')))   
+#               else:
+#                  listTagContents.append((testflag,'locktoken',listitem))            
+#            testflag = listitem.upper() != 'NOT'
+#         listTag.append(listTagContents)
+#      returnDict[resApp] = listTag      
+#   return returnDict         
 
+def testIfHeaderDict(dictIf, url, locktokenlist, entitytag, returnlocklist, environ):
+   fullurl = constructFullURL(url, environ)
 
-def testIfHeaderDict(dictIf, url, locktokenlist, entitytag):
-   fullurl = constructFullURL(url)
-   if fullurl in dictIf:
-      listTest = dictIf[fullurl]
-   elif '*' in dictIf:
-      listTest = dictIf['*']
-   else:
+   listTest = None
+   for urlres in dictIf.keys():
+      if urlres == '*' or urlres == fullurl or fullurl.startswith(urlres):
+         listTest = dictIf[urlres]
+         break
+   if listTest == None:
       return True   
+#   if fullurl in dictIf:
+#      listTest = dictIf[fullurl]
+#   elif '*' in dictIf:
+#      listTest = dictIf['*']
+#   else:
+#      return True   
 
    for listTestConds in listTest:
       matchfailed = False
@@ -279,6 +316,8 @@ def testIfHeaderDict(dictIf, url, locktokenlist, entitytag):
             testresult = entitytag == checkvalue  
          else:    # if checkstyle == 'locktoken':
             testresult = checkvalue in locktokenlist
+            if testflag and testresult:
+               returnlocklist.append(checkvalue)
          checkresult = testresult == testflag
          if not checkresult:
             matchfailed = True         
@@ -287,3 +326,36 @@ def testIfHeaderDict(dictIf, url, locktokenlist, entitytag):
          return True
    return False
 
+
+#def testIfHeaderDict(dictIf, url, locktokenlist, entitytag, returnlocklist, environ):
+#   fullurl = constructFullURL(url, environ)
+#   hasmatched = False
+#   for urlres in dictIf.keys():
+#      if urlres == '*' or urlres == fullurl or fullurl.startswith(urlres):
+#         hasmatched = True
+#         listTest = dictIf[urlres]
+#
+#         print "Matching by ", urlres
+#         print listTest
+#         
+#         for listTestConds in listTest:
+#            matchfailed = False
+#            
+#            for (testflag, checkstyle, checkvalue) in listTestConds:
+#               if checkstyle == 'entity':
+#                  testresult = entitytag == checkvalue  
+#               else:    # if checkstyle == 'locktoken':
+#                  testresult = checkvalue in locktokenlist
+#                  if testflag and testresult:
+#                     returnlocklist.append(checkvalue)
+#               checkresult = testresult == testflag         
+#               if not checkresult:
+#                  matchfailed = True         
+#                  break
+#            if not matchfailed:
+#               return True
+#
+#   if not hasmatched:
+#      return True
+#   return False
+#

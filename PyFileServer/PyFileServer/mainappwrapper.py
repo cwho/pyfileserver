@@ -7,6 +7,7 @@ from httpauthentication import HTTPAuthenticator, SimpleDomainController
 from requestresolver import RequestResolver
 from pyfiledomaincontroller import PyFileServerDomainController
 from propertylibrary import PropertyManager
+from propertylibrary import LockManager
 
 import websupportfuncs
 from paste import pyconfig
@@ -25,8 +26,13 @@ class PyFileApp(object):
       
       self._srvcfg = servcfg
       self._infoHeader = '<A href=\"mailto:' + self._srvcfg['Info_AdminEmail'] + '\">Administrator</A> at ' + self._srvcfg['Info_Organization']
-      
-      application = RequestServer(PropertyManager(os.getcwd() + os.sep + 'PyFileServer.dat'))      
+
+      ## For debug, clear locks each time
+      try:
+         os.unlink(os.getcwd() + os.sep + 'PyFileServer.locks')
+      except:
+         pass
+      application = RequestServer(PropertyManager(os.getcwd() + os.sep + 'PyFileServer.dat'), LockManager(os.getcwd() + os.sep + 'PyFileServer.locks'))      
       application = HTTPAuthenticator(application, PyFileServerDomainController(servcfg), True, True, True)      
       application = RequestResolver(application)      
       application = ErrorPrinter(application, self._infoHeader) 
@@ -38,6 +44,7 @@ class PyFileApp(object):
       environ['pyfileserver.config'] = self._srvcfg
       environ['pyfileserver.trailer'] = self._infoHeader
 
+      print "Request Headers"
       print "---------------------------------------------"
 #      # for debugging purposes
       for envitem in environ.keys():
@@ -52,5 +59,17 @@ class PyFileApp(object):
       # end
       print "---------------------------------------------"
 #      print websupportfuncs.constructFullURL(environ)      
-      return self._application(environ, start_response)
+      
+      def _start_response(respcode, headers, excinfo=None):
+         print 'Response code:', respcode
+         print 'Headers:', headers
+         return start_response(respcode, headers, excinfo)
+
+      print "Response"
+      for v in iter(self._application(environ, _start_response)):
+         if environ['REQUEST_METHOD'] != 'GET':
+            print v
+         yield v 
+      
+      return 
       

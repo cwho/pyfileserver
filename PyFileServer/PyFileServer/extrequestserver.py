@@ -31,8 +31,9 @@ BUF_SIZE = 8192
 
 
 class RequestServer(object):
-   def __init__(self, propertymanager, etagproviderfunc = etagprovider.getETag):
+   def __init__(self, propertymanager, lockmanager, etagproviderfunc = etagprovider.getETag):
       self._propertymanager = propertymanager
+      self._lockmanager = lockmanager
       self._etagprovider = etagproviderfunc
       
    def __call__(self, environ, start_response):
@@ -40,11 +41,15 @@ class RequestServer(object):
       assert 'pyfileserver.mappedrealm' in environ
       assert 'pyfileserver.mappedpath' in environ
       assert 'pyfileserver.mappedURI' in environ
-       
+      assert 'httpauthentication.username' in environ 
+      
+      environ['pyfileserver.username'] = environ['httpauthentication.username'] 
       requestmethod =  environ['REQUEST_METHOD']   
       mapdirprefix = environ['pyfileserver.mappedrealm']
       mappedpath = environ['pyfileserver.mappedpath']
       displaypath =  environ['pyfileserver.mappedURI']
+
+      print 'Lock Dict', repr(self._lockmanager)
 
       if (requestmethod == 'GET' or requestmethod == 'HEAD'):
          if os.path.isdir(mappedpath): 
@@ -69,6 +74,10 @@ class RequestServer(object):
          return self.doCOPY(environ, start_response)
       elif requestmethod == 'MOVE':
          return self.doMOVE(environ, start_response)
+      elif requestmethod == 'LOCK':
+         return self.doLOCK(environ, start_response)
+      elif requestmethod == 'UNLOCK':
+         return self.doUNLOCK(environ, start_response)
       else:
          raise ProcessRequestError(processrequesterrorhandler.HTTP_METHOD_NOT_ALLOWED)
 
@@ -95,10 +104,16 @@ class RequestServer(object):
          lastmodified = -1
          entitytag = self._etagprovider(mappedpath, environ)
 
-      self.evaluateSingleIfConditionalDoException( mappedpath, displaypath, environ, start_response)
+      if isnewfile:
+         urlparentpath = websupportfuncs.getLevelUpURL(displaypath)      
+         if self._lockmanager.isURLLocked(urlparentpath):
+            self.evaluateSingleIfConditionalDoException( os.path.dirname(mappedpath), urlparentpath, environ, start_response, True)
+
+      if os.path.exists(mappedpath) or self._lockmanager.isURLLocked(displaypath) != None:
+         self.evaluateSingleIfConditionalDoException( mappedpath, displaypath, environ, start_response, True)
       self.evaluateSingleHTTPConditionalsDoException( mappedpath, displaypath, environ, start_response)
 
-      websupportfuncs.evaluateHTTPConditionals(lastmodified, entitytag, environ, isnewfile)   
+#      websupportfuncs.evaluateHTTPConditionals(lastmodified, entitytag, environ, isnewfile)   
 
       ## Test for unsupported stuff
 
@@ -123,36 +138,40 @@ class RequestServer(object):
       inputstream = environ['wsgi.input']
 
       contentlengthremaining = contentlength
-      
-      if isbinaryfile:
-         fileobj = file(mappedpath, 'wb', BUFFER_SIZE)
-      else:
-         fileobj = file(mappedpath, 'w', BUFFER_SIZE)      
 
-
-      #read until EOF or contentlengthremaining = 0
-      readbuffer = 'start'
-      while len(readbuffer) != 0 and contentlengthremaining != 0:
-         if contentlengthremaining == -1 or contentlengthremaining > BUFFER_SIZE:
-            next_buffer_read_size = BUFFER_SIZE
+      try:      
+         if isbinaryfile:
+            fileobj = file(mappedpath, 'wb', BUFFER_SIZE)
          else:
-            next_buffer_read_size = contentlengthremaining
-            
-         readbuffer = inputstream.read(next_buffer_read_size)
-         if len(readbuffer) != 0:
-            contentlengthremaining = contentlengthremaining - len(readbuffer)
-            fileobj.write(readbuffer)         
-            fileobj.flush()         
-      
-      
-      fileobj.close()
+            fileobj = file(mappedpath, 'w', BUFFER_SIZE)      
+   
+         #read until EOF or contentlengthremaining = 0
+         readbuffer = 'start'
+         while len(readbuffer) != 0 and contentlengthremaining != 0:
+            if contentlengthremaining == -1 or contentlengthremaining > BUFFER_SIZE:
+               next_buffer_read_size = BUFFER_SIZE
+            else:
+               next_buffer_read_size = contentlengthremaining
+               
+            readbuffer = inputstream.read(next_buffer_read_size)
+            if len(readbuffer) != 0:
+               contentlengthremaining = contentlengthremaining - len(readbuffer)
+               fileobj.write(readbuffer)         
+               fileobj.flush()         
+                  
+         fileobj.close()
+         self._lockmanager.checkLocksToAdd(displaypath)
+
+      except:
+         raise ProcessRequestError(processrequesterrorhandler.HTTP_INTERNAL_ERROR) 
       
       if isnewfile:
          start_response('201 Created', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Date',httpdatehelper.getstrftime())])
       else:
          start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Date',httpdatehelper.getstrftime())])
       
-      return ['']
+      yield ''
+      return
       
         
    def doOPTIONS(self, environ, start_response):
@@ -165,7 +184,8 @@ class RequestServer(object):
          start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS PUT MKCOL'), ('DAV','1,2'), ('Date',httpdatehelper.getstrftime())])      
       else:
          raise ProcessRequestError(processrequesterrorhandler.HTTP_NOT_FOUND)         
-      return [''];      
+      yield ''
+      return      
 
 
 
@@ -174,7 +194,8 @@ class RequestServer(object):
       
       if environ['REQUEST_METHOD'] == 'HEAD':
          start_response('200 OK', [('Content-Type', 'text/html'), ('Date',httpdatehelper.getstrftime())])
-         return ['']
+         yield ''
+         return 
 
       environ['HTTP_DEPTH'] = '0' #nothing else allowed
       mappedpath = environ['pyfileserver.mappedpath']
@@ -225,7 +246,8 @@ class RequestServer(object):
       proc_response = proc_response + httpdatehelper.getstrftime()
       proc_response = proc_response + ('</body></html>\n')
       start_response('200 OK', [('Content-Type', 'text/html'), ('Date',httpdatehelper.getstrftime())])
-      return [proc_response]
+      yield proc_response
+      return
 
 
 
@@ -336,24 +358,34 @@ class RequestServer(object):
       mappedpath = environ['pyfileserver.mappedpath']
       displaypath =  environ['pyfileserver.mappedURI']
       
-      self.evaluateSingleIfConditionalDoException( mappedpath, displaypath, environ, start_response)
+      if os.path.exists(mappedpath) or self._lockmanager.isURLLocked(displaypath) != None:
+         self.evaluateSingleIfConditionalDoException( mappedpath, displaypath, environ, start_response, True)
       self.evaluateSingleHTTPConditionalsDoException( mappedpath, displaypath, environ, start_response)
       
       if os.path.exists(mappedpath):
          raise ProcessRequestError(processrequesterrorhandler.HTTP_METHOD_NOT_ALLOWED)         
+
       parentdir = os.path.dirname(mappedpath)
+            
+      urlparentpath = websupportfuncs.getLevelUpURL(displaypath)      
+      if self._lockmanager.isURLLocked(urlparentpath):
+         self.evaluateSingleIfConditionalDoException( parentdir, urlparentpath, environ, start_response, True)
+
+
       
       if not os.path.isdir(parentdir):
          raise ProcessRequestError(processrequesterrorhandler.HTTP_CONFLICT)          
       try:   
          os.mkdir(mappedpath)
+         self._lockmanager.checkLocksToAdd(displaypath)
       except Exception:
          pass
       if os.path.exists(mappedpath):
          start_response("201 Created", [('Content-Length',0)])
       else:
          start_response("200 OK", [('Content-Length',0)])
-      return['']
+      yield ''
+      return
 
    def doDELETE(self, environ, start_response):
       mappedpath = environ['pyfileserver.mappedpath']
@@ -374,7 +406,12 @@ class RequestServer(object):
       for (filepath, filedisplaypath) in actionList:         
          if filepath not in dictHidden:
             try:
-               self.evaluateSingleIfConditionalDoException( filepath, filedisplaypath, environ, start_response)
+               
+               urlparentpath = websupportfuncs.getLevelUpURL(filedisplaypath)
+               if self._lockmanager.isURLLocked(urlparentpath):
+                  self.evaluateSingleIfConditionalDoException( os.path.dirname(filepath), urlparentpath, environ, start_response, True)
+                  
+               self.evaluateSingleIfConditionalDoException( filepath, filedisplaypath, environ, start_response, True)
                self.evaluateSingleHTTPConditionalsDoException( filepath, filedisplaypath, environ, start_response)
 
                if os.path.isdir(filepath):
@@ -382,6 +419,7 @@ class RequestServer(object):
                else:
                   os.unlink(filepath)
                self._propertymanager.removeProperties(filedisplaypath)
+               self._lockmanager.removeAllLocksFromURL(filedisplaypath)
             except ProcessRequestError, e:
                evalue = e.value
                if evalue in processrequesterrorhandler.ERROR_DESCRIPTIONS:
@@ -397,8 +435,8 @@ class RequestServer(object):
          else:
             dictHidden[os.path.dirname(filepath)] = ''
 
-      if len(dictError) == 1 and mappedpath in dictError:
-         start_response(dictError[mappedpath], [('Content-Length','0')])
+      if len(dictError) == 1 and displaypath in dictError:
+         start_response(dictError[displaypath], [('Content-Length','0')])
          yield ''      
       elif len(dictError) > 0:
          start_response('207 Multi Status', [('Content-Length','0')])
@@ -414,14 +452,11 @@ class RequestServer(object):
 
 
    def doPROPPATCH(self, environ, start_response):
-
-      print self._propertymanager.getString()
-
       environ['HTTP_DEPTH'] = '0' #nothing else allowed
       mappedpath = environ['pyfileserver.mappedpath']
       displaypath =  environ['pyfileserver.mappedURI']
       
-      self.evaluateSingleIfConditionalDoException( mappedpath, displaypath, environ, start_response)
+      self.evaluateSingleIfConditionalDoException( mappedpath, displaypath, environ, start_response, True)
       self.evaluateSingleHTTPConditionalsDoException( mappedpath, displaypath, environ, start_response)
 
       contentlengthtoread = 0
@@ -430,7 +465,7 @@ class RequestServer(object):
             contentlengthtoread = long(environ['CONTENT_LENGTH'])
 
       requestbody = ''
-      if 'wsgi.input' in environ:
+      if 'wsgi.input' in environ and contentlengthtoread > 0:
          inputstream = environ['wsgi.input']  
          readsize = BUF_SIZE
          if contentlengthtoread < BUF_SIZE:
@@ -529,9 +564,6 @@ class RequestServer(object):
    
    # does not yet support If and If HTTP Conditions   
    def doPROPFIND(self, environ, start_response):
-
-      print self._propertymanager.getString()
-
       if 'HTTP_DEPTH' not in environ:
          environ['HTTP_DEPTH'] = '0'
       mappedpath = environ['pyfileserver.mappedpath']
@@ -543,7 +575,7 @@ class RequestServer(object):
             contentlengthtoread = long(environ['CONTENT_LENGTH'])
 
       requestbody = ''
-      if 'wsgi.input' in environ:
+      if 'wsgi.input' in environ and contentlengthtoread > 0:
          inputstream = environ['wsgi.input']  
          readsize = BUF_SIZE
          if contentlengthtoread < BUF_SIZE:
@@ -617,7 +649,7 @@ class RequestServer(object):
                try:
 #                  self.evaluateSingleIfConditionalDoException( filepath, filedisplaypath, environ, start_response)
 #                  self.evaluateSingleHTTPConditionalsDoException( filepath, filedisplaypath, environ, start_response)
-                  (propvalue, propstatus) = propertylibrary.getProperty(self._propertymanager, respath, resdisplayname, propns, propname, self._etagprovider)   
+                  (propvalue, propstatus) = propertylibrary.getProperty(self._propertymanager, self._lockmanager, respath, resdisplayname, propns, propname, self._etagprovider)   
                except ProcessRequestError, e:
                   evalue = e.value
                   propvalue = ''
@@ -690,10 +722,17 @@ class RequestServer(object):
             try:
                self.evaluateSingleHTTPConditionalsDoException( filepath, filedisplaypath, environ, start_response) 
                self.evaluateSingleIfConditionalDoException( filepath, filedisplaypath, environ, start_response)
-               self.evaluateSingleIfConditionalDoException( destfilepath, destfiledisplaypath, environ, start_response)
+               if os.path.exists(destfilepath) or self._lockmanager.isURLLocked(destfiledisplaypath) != None:
+                  self.evaluateSingleIfConditionalDoException( destfilepath, destfiledisplaypath, environ, start_response, True)
                
                if not os.path.exists(destparentpath):
                   raise ProcessRequestError(processrequesterrorhandler.HTTP_CONFLICT)
+               
+               if not os.path.exists(destfilepath):
+                  urlparentpath = websupportfuncs.getLevelUpURL(destfiledisplaypath)
+                  if self._lockmanager.isURLLocked(urlparentpath):
+                     self.evaluateSingleIfConditionalDoException( os.path.dirname(destfilepath), urlparentpath, environ, start_response, True)
+
 
                if environ['HTTP_OVERWRITE'] == 'F':
                   if os.path.exists(destfilepath):
@@ -725,6 +764,7 @@ class RequestServer(object):
                else:   
                   shutil.copy2(filepath, destfilepath)
                self._propertymanager.copyProperties(filedisplaypath, destfiledisplaypath)     
+               self._lockmanager.checkLocksToAdd(displaypath)
 
             except ProcessRequestError, e:
                evalue = e.value
@@ -803,11 +843,22 @@ class RequestServer(object):
          if destparentpath not in dictHidden:
             try:
                self.evaluateSingleHTTPConditionalsDoException( filepath, filedisplaypath, environ, start_response) 
-               self.evaluateSingleIfConditionalDoException( filepath, filedisplaypath, environ, start_response)
-               self.evaluateSingleIfConditionalDoException( destfilepath, destfiledisplaypath, environ, start_response)
+               self.evaluateSingleIfConditionalDoException( filepath, filedisplaypath, environ, start_response, True)
+               if os.path.exists(destfilepath) or self._lockmanager.isURLLocked(destfiledisplaypath) != None:
+                  self.evaluateSingleIfConditionalDoException( destfilepath, destfiledisplaypath, environ, start_response, True)
                
                if not os.path.exists(destparentpath):
                   raise ProcessRequestError(processrequesterrorhandler.HTTP_CONFLICT)
+
+               if not os.path.exists(filepath):
+                  urlparentpath = websupportfuncs.getLevelUpURL(filedisplaypath)
+                  if self._lockmanager.isURLLocked(urlparentpath):
+                     self.evaluateSingleIfConditionalDoException( os.path.dirname(filepath), urlparentpath, environ, start_response, True)
+
+               if not os.path.exists(destfilepath):
+                  urlparentpath = websupportfuncs.getLevelUpURL(destfiledisplaypath)
+                  if self._lockmanager.isURLLocked(urlparentpath):
+                     self.evaluateSingleIfConditionalDoException( os.path.dirname(destfilepath), urlparentpath, environ, start_response, True)
 
                if environ['HTTP_OVERWRITE'] == 'F':
                   if os.path.exists(destfilepath):
@@ -839,6 +890,7 @@ class RequestServer(object):
                else:   
                   shutil.copy2(filepath, destfilepath)
                self._propertymanager.copyProperties(filedisplaypath, destfiledisplaypath)     
+               self._lockmanager.checkLocksToAdd(displaypath)
 
             except ProcessRequestError, e:
                evalue = e.value
@@ -868,6 +920,7 @@ class RequestServer(object):
                else:
                   os.unlink(Ffilepath)
                self._propertymanager.removeProperties(Ffiledisplaypath)               
+               self._lockmanager.removeAllLocksFromURL(Ffiledisplaypath)
             except Exception:
                pass
             if os.path.exists(Ffilepath):
@@ -893,66 +946,233 @@ class RequestServer(object):
          yield ''
       return
 
+   def doLOCK(self, environ, start_response):
+      if 'HTTP_DEPTH' not in environ:
+         environ['HTTP_DEPTH'] = 'infinity'
+      if environ['HTTP_DEPTH'] != '0':
+         environ['HTTP_DEPTH'] = 'infinity'    # only two acceptable
+            
+      mappedpath = environ['pyfileserver.mappedpath']
+      displaypath =  environ['pyfileserver.mappedURI']
+
+      contentlengthtoread = 0
+      if 'CONTENT_LENGTH' in environ:
+         if environ['CONTENT_LENGTH'].isdigit():
+            contentlengthtoread = long(environ['CONTENT_LENGTH'])
+
+      requestbody = ''
+      if 'wsgi.input' in environ and contentlengthtoread > 0:
+         inputstream = environ['wsgi.input']  
+         readsize = BUF_SIZE
+         if contentlengthtoread < BUF_SIZE:
+            readsize = contentlengthtoread    
+         readbuffer = inputstream.read(readsize)
+         contentlengthtoread = contentlengthtoread - readsize
+         requestbody = requestbody + readbuffer
+         while len(readbuffer) != 0 and contentlengthtoread > 0:
+            readsize = BUF_SIZE
+            if contentlengthtoread < BUF_SIZE:
+               readsize = contentlengthtoread    
+            readbuffer = inputstream.read(readsize)
+            contentlengthtoread = contentlengthtoread - readsize
+            requestbody = requestbody + readbuffer
+               
+      print requestbody
+
+      if 'HTTP_TIMEOUT' not in environ:
+         environ['HTTP_TIMEOUT'] = '' # reader function will return default
+      timeoutsecs = propertylibrary.readTimeoutValueHeader(environ['HTTP_TIMEOUT'])         
+
+      lockfailure = False
+      dictStatus = dict([])
+
+      if requestbody == '':
+         #refresh lock only
+         environ['HTTP_DEPTH'] = '0'
+         reslist = [(mappedpath , displaypath)]
+      
+         self.evaluateSingleIfConditionalDoException( mappedpath, displaypath, environ, start_response, True)
+         self.evaluateSingleHTTPConditionalsDoException( mappedpath, displaypath, environ, start_response)
+
+         optlocklist = environ['pyfileserver.conditions.locklistcheck']
+         for locklisttoken in optlocklist:
+            self._lockmanager.refreshLock(locklisttoken,timeoutsecs)
+            genlocktoken = locklisttoken
+
+         dictStatus[displaypath] = "200 OK"      
+      else:   
+
+         try:
+            doc = Sax2.Reader().fromString(requestbody)
+         except Exception:
+            raise ProcessRequestError(processrequesterrorhandler.HTTP_BAD_REQUEST)   
+         liroot = doc.documentElement
+         if liroot.namespaceURI != 'DAV:' or liroot.localName != 'lockinfo':
+            raise ProcessRequestError(processrequesterrorhandler.HTTP_BAD_REQUEST)   
+
+         locktype = 'write'         # various defaults
+         lockscope = 'exclusive'
+         lockowner = ''
+         lockdepth = environ['HTTP_DEPTH']
+
+         for linode in liroot.childNodes:
+            if linode.namespaceURI == 'DAV:' and linode.localName == 'lockscope':
+               for lsnode in linode.childNodes:
+                  if lsnode.namespaceURI == 'DAV:' and lsnode.localName == 'exclusive': 
+                     lockscope = 'exclusive' 
+                  elif lsnode.namespaceURI == 'DAV:' and lsnode.localName == 'shared': 
+                     lockscope = 'shared'
+                  else:
+                     raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
+                  break               
+            elif linode.namespaceURI == 'DAV:' and linode.localName == 'locktype':
+               for ltnode in linode.childNodes:
+                  if ltnode.namespaceURI == 'DAV:' and ltnode.localName == 'write': 
+                     locktype = 'write'   # only type accepted
+                  else:
+                     raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
+                  break
+            elif linode.namespaceURI == 'DAV:' and linode.localName == 'owner':
+               if len(linode.childNodes) == 1 and linode.firstChild.nodeType == xml.dom.Node.TEXT_NODE:
+                  lockowner = linode.firstChild.nodeValue
+               else:
+                  lockownerstream = StringIO.StringIO()
+                  for childnode in linode.childNodes:
+                     xml.dom.ext.PrettyPrint(childnode, stream=lockownerstream)
+                  lockowner = lockownerstream.getvalue()
+                  lockownerstream.close()                        
+
+         genlocktoken = self._lockmanager.generateLock(environ['pyfileserver.username'], locktype, lockscope, lockdepth, lockowner, timeoutsecs)
+
+         reslist = websupportfuncs.getDepthActionList(mappedpath, displaypath, environ['HTTP_DEPTH'], True)
+         for (filepath, filedisplaypath) in reslist:
+            try:
+               self.evaluateSingleIfConditionalDoException(filepath, filedisplaypath, environ, start_response, False) # need not test for lock - since can try for shared lock
+               self.evaluateSingleHTTPConditionalsDoException(filepath, filedisplaypath, environ, start_response)
+               
+               reschecklist = websupportfuncs.getDepthActionList(filepath, filedisplaypath, '1', True) 
+               
+               #lock over collection may not clash with locks of members   
+               for (rescheckpath, rescheckdisplaypath) in reschecklist:
+                  urllockscope = self._lockmanager.isURLLocked(rescheckdisplaypath)
+                  if urllockscope == None or (urllockscope == 'shared' and lockscope == 'shared') :
+                     pass
+                  else:
+                     raise ProcessRequestError(processrequesterrorhandler.HTTP_LOCKED)
+               
+               self._lockmanager.addURLToLock(filedisplaypath,genlocktoken)                  
+               dictStatus[filedisplaypath] = "200 OK"            
+            except ProcessRequestError, e:
+               evalue = e.value
+               if evalue in processrequesterrorhandler.ERROR_DESCRIPTIONS:
+                  dictStatus[filedisplaypath] = processrequesterrorhandler.ERROR_DESCRIPTIONS[evalue]
+               else:
+                  dictStatus[filedisplaypath] = str(evalue)
+               lockfailure = True   
+            except Exception:
+               raise
+               dictStatus[filedisplaypath] = "500 Internal Server Error"
+               lockfailure = True
+         
+         if lockfailure:
+            self._lockmanager.deleteLock(genlocktoken)
+      
+      # done everything, now report on status
+      if environ['HTTP_DEPTH'] == '0' or len(reslist) == 1:
+         if lockfailure:
+            respcode = dictStatus[displaypath]   
+            start_response( respcode, [('Content-Length','0')])
+            yield ''
+            return
+         else:                     
+            start_response( "200 OK", [('Content-Type','text/xml'),('Lock-Token',genlocktoken)])
+            yield "<?xml version=\'1.0\' ?>"
+            yield "<prop xmlns=\'DAV:\'><lockdiscovery>"            
+            (propvalue, propstatus) = propertylibrary.getProperty(self._propertymanager, self._lockmanager, mappedpath, displaypath, 'DAV:', 'lockdiscovery', self._etagprovider)   
+            yield propvalue
+            yield '</lockdiscovery></prop>'
+            return
+      else: 
+         if lockfailure:
+            start_response("207 Multistatus", [('Content-Type','text/xml')])
+         else:
+            start_response("200 OK", [('Content-Type','text/xml'),('Lock-Token',genlocktoken)])
+         yield "<?xml version='1.0' ?>"
+         yield "<multistatus xmlns='DAV:'>"
+         for (filepath, filedisplaypath) in reslist:
+            yield "<response>"
+            yield "<href>" + websupportfuncs.constructFullURL(filedisplaypath, environ) + "</href>"
+            if dictStatus[filedisplaypath] == '200 OK':
+               yield "<propstat>"
+               yield "<prop><lockdiscovery>"
+               (propvalue, propstatus) = propertylibrary.getProperty(self._propertymanager, self._lockmanager, filepath, filedisplaypath, 'DAV:', 'lockdiscovery', self._etagprovider)   
+               yield propvalue
+               yield "</lockdiscovery></prop>"
+               if lockfailure:
+                  yield "<status>HTTP/1.1 424 Failed Dependency</status>"
+               else:
+                  yield "<status>HTTP/1.1 200 OK</status>"
+               yield "</propstat>"
+            else: 
+               yield "<status>HTTP/1.1 " + dictStatus[filedisplaypath] + "</status>"
+            yield "</response>"
+         yield "</multistatus>"      
+      return
+
+   def doUNLOCK(self, environ, start_response):
+      mappedpath = environ['pyfileserver.mappedpath']
+      displaypath =  environ['pyfileserver.mappedURI']
+
+      self.evaluateSingleIfConditionalDoException( mappedpath, displaypath, environ, start_response)
+      self.evaluateSingleHTTPConditionalsDoException( mappedpath, displaypath, environ, start_response)
+      
+      if 'HTTP_LOCK_TOKEN' in environ:
+         environ['HTTP_LOCK_TOKEN'] = environ['HTTP_LOCK_TOKEN'].strip('<>')
+         if self._lockmanager.isURLLockedByToken(displaypath,environ['HTTP_LOCK_TOKEN']):
+            if self._lockmanager.isTokenLockedByUser(environ['HTTP_LOCK_TOKEN'], environ['pyfileserver.username']):
+               self._lockmanager.deleteLock(environ['HTTP_LOCK_TOKEN'])
+               start_response('204 No Content',  [('Content-Length','0')])        
+               yield ''      
+               return
+
+      raise ProcessRequestError(processrequesterrorhandler.HTTP_BAD_REQUEST)
+      return
 
 
-   def evaluateSingleIfConditional(self, mappedpath, displaypath, environ, start_response):
-      if 'HTTP_IF' not in environ:
-         return
-      if 'pyfileserver.conditions.if' not in environ:
-         environ['pyfileserver.conditions.if'] = web.supportfuncs.getIfHeaderDict(environ['HTTP_IF'])
-      testDict = environ['pyfileserver.conditions.if']
-      if os.path.exists(mappedpath):
-         statresults = os.stat(mappedpath)
-         lastmodified = statresults[stat.ST_MTIME]
-         entitytag = self._etagprovider(mappedpath, environ)         
-         locktokenlist = [] # not implemented yet
-         isnewfile = False
-      else:
-         lastmodified = -1 # nonvalid modified time
-         entitytag = '[]' # Non-valid entity tag
-         locktokenlist = [] #non-valid locktoken
-         isnewfile = True
-      if not websupportfuncs.testIfHeaderDict(testDict, displaypath, locktokenlist, entitytag):
-         return '412 Precondition Failed'
-      return '200 OK'   
-#         raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED) 
-
-   def evaluateSingleHTTPConditionals(self, mappedpath, displaypath, environ, start_response):
-      if 'HTTP_IF_MODIFIED_SINCE' in environ or 'HTTP_IF_UNMODIFIED_SINCE' in environ or 'HTTP_IF_MATCH' in environ or 'HTTP_IF_NONE_MATCH' in environ:
-         pass
-      else:
-         return
-      if os.path.exists(mappedpath):
-         statresults = os.stat(mappedpath)
-         lastmodified = statresults[stat.ST_MTIME]
-         entitytag = self._etagprovider(mappedpath, environ)         
-         isnewfile = False
-      else:
-         lastmodified = -1 # nonvalid modified time
-         entitytag = '[]' # Non-valid entity tag
-         isnewfile = True      
-      return websupportfuncs.evaluateHTTPConditionalsWithoutExceptions(lastmodified, entitytag, environ)
                 
-
-   def evaluateSingleIfConditionalDoException(self, mappedpath, displaypath, environ, start_response):
+   # if checkLock is True, and url is locked, then a locktoken must be matched in If
+   def evaluateSingleIfConditionalDoException(self, mappedpath, displaypath, environ, start_response, checkLock = False):
       if 'HTTP_IF' not in environ:
+         if checkLock:
+            if self._lockmanager.isURLLocked(displaypath) != None:
+               raise ProcessRequestError(processrequesterrorhandler.HTTP_LOCKED)            
          return
       if 'pyfileserver.conditions.if' not in environ:
-         environ['pyfileserver.conditions.if'] = web.supportfuncs.getIfHeaderDict(environ['HTTP_IF'])
+         environ['pyfileserver.conditions.if'] = websupportfuncs.getIfHeaderDict(environ['HTTP_IF'])
+         print 'Condition Dict', environ['pyfileserver.conditions.if']
       testDict = environ['pyfileserver.conditions.if']
       if os.path.exists(mappedpath):
          statresults = os.stat(mappedpath)
          lastmodified = statresults[stat.ST_MTIME]
          entitytag = self._etagprovider(mappedpath, environ)         
-         locktokenlist = [] # not implemented yet
+         locktokenlist = self._lockmanager.getURLLocktokenListOfUser(displaypath,environ['pyfileserver.username'])
          isnewfile = False
       else:
          lastmodified = -1 # nonvalid modified time
          entitytag = '[]' # Non-valid entity tag
-         locktokenlist = [] #non-valid locktoken
+         locktokenlist = self._lockmanager.getURLLocktokenListOfUser(displaypath,environ['pyfileserver.username']) #null resources lock token not implemented yet
          isnewfile = True
-      if not websupportfuncs.testIfHeaderDict(testDict, displaypath, locktokenlist, entitytag):
+      returnlocklist = []   
+      if not websupportfuncs.testIfHeaderDict(testDict, displaypath, locktokenlist, entitytag, returnlocklist, environ):
          raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED) 
+      environ['pyfileserver.conditions.locklistcheck'] = returnlocklist 
+      if checkLock:
+         print 'LockTokenList', locktokenlist
+         print 'ReturnLockList', returnlocklist  
+         if self._lockmanager.isURLLocked(displaypath) != None:
+            if len(returnlocklist) == 0:
+               raise ProcessRequestError(processrequesterrorhandler.HTTP_LOCKED)
+         
 
    def evaluateSingleHTTPConditionalsDoException(self, mappedpath, displaypath, environ, start_response):
       if 'HTTP_IF_MODIFIED_SINCE' in environ or 'HTTP_IF_UNMODIFIED_SINCE' in environ or 'HTTP_IF_MATCH' in environ or 'HTTP_IF_NONE_MATCH' in environ:
@@ -970,42 +1190,81 @@ class RequestServer(object):
          isnewfile = True      
       websupportfuncs.evaluateHTTPConditionals(lastmodified, entitytag, environ)
                 
-
-
-   def evaluateIfConditional(self, actionList, environ, start_response):
-      if 'HTTP_IF' not in environ:
-         return
-      if 'pyfileserver.conditions.if' not in environ:
-         environ['pyfileserver.conditions.if'] = web.supportfuncs.getIfHeaderDict(environ['HTTP_IF'])
-      testDict = environ['pyfileserver.conditions.if']
-            
-      for (mappedpath, displaypath) in actionList:
-         if os.path.exists(mappedpath):
-            statresults = os.stat(mappedpath)
-            lastmodified = statresults[stat.ST_MTIME]
-            entitytag = self._etagprovider(mappedpath, environ)         
-            locktokenlist = [] # not implemented yet
-            isnewfile = False
-         else:
-            lastmodified = -1 # nonvalid modified time
-            entitytag = '[]' # Non-valid entity tag
-            locktokenlist = [] #non-valid locktoken
-            isnewfile = True
-         if not websupportfuncs.testIfHeaderDict(testDict, displaypath, locktokenlist, entitytag):
-            raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED) 
-
-   def evaluateHTTPConditionals(self, mappedpath, displaypath, environ, start_response):
-      if 'HTTP_IF_MODIFIED_SINCE' in environ or 'HTTP_IF_UNMODIFIED_SINCE' in environ or 'HTTP_IF_MATCH' in environ or 'HTTP_IF_NONE_MATCH' in environ:
-         pass
-      else:
-         return
-      if os.path.exists(mappedpath):
-         statresults = os.stat(mappedpath)
-         lastmodified = statresults[stat.ST_MTIME]
-         entitytag = self._etagprovider(mappedpath, environ)         
-         isnewfile = False
-      else:
-         lastmodified = -1 # nonvalid modified time
-         entitytag = '[]' # Non-valid entity tag
-         isnewfile = True      
-      websupportfuncs.evaluateHTTPConditionals(lastmodified, entitytag, environ)   
+#
+#
+#   def evaluateIfConditional(self, actionList, environ, start_response):
+#      if 'HTTP_IF' not in environ:
+#         return
+#      if 'pyfileserver.conditions.if' not in environ:
+#         environ['pyfileserver.conditions.if'] = web.supportfuncs.getIfHeaderDict(environ['HTTP_IF'])
+#      testDict = environ['pyfileserver.conditions.if']
+#            
+#      for (mappedpath, displaypath) in actionList:
+#         if os.path.exists(mappedpath):
+#            statresults = os.stat(mappedpath)
+#            lastmodified = statresults[stat.ST_MTIME]
+#            entitytag = self._etagprovider(mappedpath, environ)         
+#            locktokenlist = [] # not implemented yet
+#            isnewfile = False
+#         else:
+#            lastmodified = -1 # nonvalid modified time
+#            entitytag = '[]' # Non-valid entity tag
+#            locktokenlist = [] #non-valid locktoken
+#            isnewfile = True
+#         if not websupportfuncs.testIfHeaderDict(testDict, displaypath, locktokenlist, entitytag):
+#            raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED) 
+#
+#   def evaluateHTTPConditionals(self, mappedpath, displaypath, environ, start_response):
+#      if 'HTTP_IF_MODIFIED_SINCE' in environ or 'HTTP_IF_UNMODIFIED_SINCE' in environ or 'HTTP_IF_MATCH' in environ or 'HTTP_IF_NONE_MATCH' in environ:
+#         pass
+#      else:
+#         return
+#      if os.path.exists(mappedpath):
+#         statresults = os.stat(mappedpath)
+#         lastmodified = statresults[stat.ST_MTIME]
+#         entitytag = self._etagprovider(mappedpath, environ)         
+#         isnewfile = False
+#      else:
+#         lastmodified = -1 # nonvalid modified time
+#         entitytag = '[]' # Non-valid entity tag
+#         isnewfile = True      
+#      websupportfuncs.evaluateHTTPConditionals(lastmodified, entitytag, environ)   
+#
+#
+#   def evaluateSingleIfConditional(self, mappedpath, displaypath, environ, start_response):
+#      if 'HTTP_IF' not in environ:
+#         return
+#      if 'pyfileserver.conditions.if' not in environ:
+#         environ['pyfileserver.conditions.if'] = web.supportfuncs.getIfHeaderDict(environ['HTTP_IF'])
+#      testDict = environ['pyfileserver.conditions.if']
+#      if os.path.exists(mappedpath):
+#         statresults = os.stat(mappedpath)
+#         lastmodified = statresults[stat.ST_MTIME]
+#         entitytag = self._etagprovider(mappedpath, environ)         
+#         locktokenlist = [] # not implemented yet
+#         isnewfile = False
+#      else:
+#         lastmodified = -1 # nonvalid modified time
+#         entitytag = '[]' # Non-valid entity tag
+#         locktokenlist = [] #non-valid locktoken
+#         isnewfile = True
+#      if not websupportfuncs.testIfHeaderDict(testDict, displaypath, locktokenlist, entitytag):
+#         return '412 Precondition Failed'
+#      return '200 OK'   
+##         raise ProcessRequestError(processrequesterrorhandler.HTTP_PRECONDITION_FAILED) 
+#
+#   def evaluateSingleHTTPConditionals(self, mappedpath, displaypath, environ, start_response):
+#      if 'HTTP_IF_MODIFIED_SINCE' in environ or 'HTTP_IF_UNMODIFIED_SINCE' in environ or 'HTTP_IF_MATCH' in environ or 'HTTP_IF_NONE_MATCH' in environ:
+#         pass
+#      else:
+#         return
+#      if os.path.exists(mappedpath):
+#         statresults = os.stat(mappedpath)
+#         lastmodified = statresults[stat.ST_MTIME]
+#         entitytag = self._etagprovider(mappedpath, environ)         
+#         isnewfile = False
+#      else:
+#         lastmodified = -1 # nonvalid modified time
+#         entitytag = '[]' # Non-valid entity tag
+#         isnewfile = True      
+#      return websupportfuncs.evaluateHTTPConditionalsWithoutExceptions(lastmodified, entitytag, environ)
