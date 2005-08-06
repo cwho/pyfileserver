@@ -1,16 +1,70 @@
-from optparse import Option
+"""
+Running PyFileServer
+====================
+
+PyFileServer comes bundled with a simple wsgi webserver.
+
+Running as standalone server
+----------------------------
+
+To run as a standalone server using the bundled ext_wsgiutils_server.py:: 
+
+      usage: python ext_wsgiutils_server.py [options] [config-file]
+      
+      config-file:
+        The configuration file for PyFileServer. if omitted, the application
+        will look for a file named 'PyFileServer.conf' in the current directory
+      
+      options:
+        --port=PORT  Port to serve on (default: 8080)
+        --host=HOST  Host to serve from (default: localhost, which is only
+                     accessible from the local computer; use 0.0.0.0 to make your
+                     application public)
+        -h, --help   show this help message and exit
+      
+      
+Running using other web servers
+-------------------------------
+
+To run it with other WSGI web servers, you can::
+   
+      from pyfileserver.mainappwrapper import PyFileApp
+      publish_app = PyFileApp('PyFileServer.conf')   
+      # construct the application with configuration file 
+      # if configuration file is omitted, the application
+      # will look for a file named 'PyFileServer.conf'
+      # in the current directory
+ 
+where ``publish_app`` is the WSGI application to be run, it will be called with 
+``publish_app(environ, start_response)`` for each incoming request, as described in 
+WSGI <http://www.python.org/peps/pep-0333.html>
+
+Note: if you are using the paster development server (from Paste <http://pythonpaste.org>), you can 
+copy ``ext_wsgi_server.py`` to ``<Paste-installation>/paste/servers`` and use this server to run the 
+application by specifying ``server='ext_wsgiutils'`` in the ``server.conf`` or appropriate paste 
+configuration.
+
+
+About ext_wsgiutils_server
+--------------------------
+
+ext_wsgiutils_server.py is an extension of the wsgiutils server in Paste. 
+It supports passing all of the HTTP and WebDAV (rfc 2518) methods.
+
+It includes code from the following sources:
+``wsgiServer.py`` from wsgiKit <http://www.owlfish.com/software/wsgiutils/> under PSF license, 
+``wsgiutils_server.py`` from Paste <http://pythonpaste.org> under PSF license, 
+flexible handler method <http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/307618> under public domain. 
+
+"""
+
+
+from optparse import Option, OptionParser
 
 import SimpleHTTPServer, SocketServer, BaseHTTPServer, urlparse
 import sys, logging
 import traceback, StringIO
 
-#
-# Acknowledge wsgiServer.py from wsgiKit and wsgiutils_server from Paste for this code
-# and also http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/307618 for the flexible handler method
-#
-# Formal notice to come in
-# This file should go under Paste\Paste\servers
-#
 
 SERVER_ERROR = """\
 <html>
@@ -162,14 +216,10 @@ def serve(conf, app):
     server.serve_forever()
 
 
-
-
-
-
-
 description = """\
-WSGIUtils <http://www.owlfish.com/software/wsgiutils/> is a small
-threaded server using Python's standard SimpleHTTPServer.
+Ext_WSGIUtils is an extension of WSGIUtils <http://www.owlfish.com/software/wsgiutils/>, a small threaded server using Python's standard SimpleHTTPServer.
+
+Ext_WSGIUtils supports passing all of the HTTP and WebDAV (rfc 2518) methods.
 """
 
 options = [
@@ -180,3 +230,26 @@ options = [
            metavar="HOST",
            help='Host to serve from (default: localhost, which is only accessible from the local computer; use 0.0.0.0 to make your application public)'),
     ]
+
+if __name__ == '__main__':
+    usage = """python ext_wsgiutils_server.py [options] [config-file]
+      
+config-file: 
+  The configuration file for PyFileServer. if omitted, the application 
+  will look for a file named 'PyFileServer.conf' in the current directory"""
+      
+    optparser = OptionParser(usage, option_list=options)    
+    (options, args) = optparser.parse_args()
+    optionsdict = dict()
+    for optionkey in options.__dict__.keys(): 
+        if not options.__dict__[optionkey] == None:
+            optionsdict[optionkey] = options.__dict__[optionkey]
+    
+    if len(args) > 0:
+       configfilespecified = args[0]
+    else:
+       configfilespecified = None
+    
+    from pyfileserver.mainappwrapper import PyFileApp        
+    serve(optionsdict, PyFileApp(configfilespecified))
+    
