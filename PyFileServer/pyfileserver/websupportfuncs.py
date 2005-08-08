@@ -170,7 +170,7 @@ def obtainContentRanges(rangetext, filesize):
    return (listReturn2, totallength)
 
 
-def evaluateHTTPConditionalsWithoutExceptions(lastmodifiedsecs, entitytag, environ, isnewfile=False):
+def evaluateHTTPConditionalsWithoutExceptions(lastmodified, entitytag, environ, isnewfile=False):
    ## Conditions
 
    # An HTTP/1.1 origin server, upon receiving a conditional request that includes both a Last-Modified date
@@ -222,7 +222,7 @@ def evaluateHTTPConditionalsWithoutExceptions(lastmodifiedsecs, entitytag, envir
    return '200 OK'
 
 
-def evaluateHTTPConditionals(lastmodifiedsecs, entitytag, environ, isnewfile=False):
+def evaluateHTTPConditionals(lastmodified, entitytag, environ, isnewfile=False):
    ## Conditions
 
    # An HTTP/1.1 origin server, upon receiving a conditional request that includes both a Last-Modified date
@@ -332,22 +332,43 @@ def getIfHeaderDict(iftext):
 #      returnDict[resApp] = listTag      
 #   return returnDict         
 
-def testIfHeaderDict(dictIf, url, locktokenlist, entitytag, returnlocklist, environ):
-   fullurl = constructFullURL(url, environ)
+def _lookForLockTokenInSubDict(locktoken, listTest):
+   for listTestConds in listTest:
+      for (testflag, checkstyle, checkvalue) in listTestConds:
+         if checkstyle == 'locktoken' and testflag:
+            if locktoken == checkvalue:  
+               return True
+   return False   
 
-   listTest = None
-   for urlres in dictIf.keys():
-      if urlres == '*' or urlres == fullurl or fullurl.startswith(urlres):
-         listTest = dictIf[urlres]
-         break
-   if listTest == None:
-      return True   
-#   if fullurl in dictIf:
-#      listTest = dictIf[fullurl]
-#   elif '*' in dictIf:
-#      listTest = dictIf['*']
-#   else:
+def testForLockTokenInIfHeaderDict(dictIf, locktoken, fullurl, headurl):
+   if '*' in dictIf:
+      if _lookForLockTokenInSubDict(locktoken, dictIf['*']):
+         return True
+   
+   if fullurl in dictIf:
+      if _lookForLockTokenInSubDict(locktoken, dictIf[fullurl]):
+         return True
+         
+   if headurl in dictIf:
+      if _lookForLockTokenInSubDict(locktoken, dictIf[headurl]):
+         return True
+      
+
+def testIfHeaderDict(dictIf, fullurl, locktokenlist, entitytag):
+
+#   listTest = None
+#   for urlres in dictIf.keys():
+#      if urlres == '*' or urlres == fullurl or fullurl.startswith(urlres):
+#         listTest = dictIf[urlres]
+#         break
+#   if listTest == None:
 #      return True   
+   if fullurl in dictIf:
+      listTest = dictIf[fullurl]
+   elif '*' in dictIf:
+      listTest = dictIf['*']
+   else:
+      return True   
 
    for listTestConds in listTest:
       matchfailed = False
@@ -355,10 +376,10 @@ def testIfHeaderDict(dictIf, url, locktokenlist, entitytag, returnlocklist, envi
       for (testflag, checkstyle, checkvalue) in listTestConds:
          if checkstyle == 'entity':
             testresult = entitytag == checkvalue  
-         else:    # if checkstyle == 'locktoken':
+         elif checkstyle == 'locktoken':
             testresult = checkvalue in locktokenlist
-            if testflag and testresult:
-               returnlocklist.append(checkvalue)
+         else: # unknown
+            testresult = True
          checkresult = testresult == testflag
          if not checkresult:
             matchfailed = True         

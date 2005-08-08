@@ -115,14 +115,14 @@ class LockManager(object):
       if self._loaded:
          self._dict.close()   
 
-   def generateLock(self, username, locktype = 'write', lockscope = 'exclusive', lockdepth = 'infinite', lockowner = '', timeout = LOCK_TIME_OUT_DEFAULT):
+   def generateLock(self, username, locktype = 'write', lockscope = 'exclusive', lockdepth = 'infinite', lockowner = '', lockheadurl = '', timeout = LOCK_TIME_OUT_DEFAULT):
       self._write_lock.acquire(True)
       try:
          if not self._loaded:
             self.performInitialization()
-         randtoken = "locktoken:" + str(hex(random.getrandbits(256)))
+         randtoken = "opaquelocktoken:" + str(hex(random.getrandbits(256)))
          while ('LOCKTIME:'+ randtoken) in self._dict:
-            randtoken = "locktoken:" + str(hex(random.getrandbits(256)))
+            randtoken = "opaquelocktoken:" + str(hex(random.getrandbits(256)))
          if timeout < 0:
             self._dict['LOCKTIME:'+ randtoken] = -1      
          else:
@@ -132,6 +132,7 @@ class LockManager(object):
          self._dict['LOCKSCOPE:'+ randtoken] = lockscope
          self._dict['LOCKDEPTH:'+ randtoken] = lockdepth
          self._dict['LOCKOWNER:'+randtoken] = lockowner
+         self._dict['LOCKHEADURL:'+randtoken] = lockheadurl
          return randtoken
       finally:
          self._dict.sync()
@@ -166,6 +167,8 @@ class LockManager(object):
             del self._dict['LOCKDEPTH:'+ locktoken]
          if ('LOCKOWNER:'+ locktoken) in self._dict:
             del self._dict['LOCKOWNER:'+ locktoken]
+         if ('LOCKHEADURL:'+ locktoken) in self._dict:
+            del self._dict['LOCKHEADURL:'+ locktoken]
          if ('LOCKURLS:'+locktoken) in self._dict:       
             for urllocked in self._dict['LOCKURLS:'+locktoken]:
                if ('URLLOCK:' + urllocked) in self._dict:
@@ -317,7 +320,7 @@ class LockManager(object):
       if not self._loaded:
          self.performInitialization()
       parentdisplaypath = websupportfuncs.getLevelUpURL(displaypath)
-      if self.isURLLocked(parentdisplaypath):
+      if self.isURLLocked(parentdisplaypath) != None:
          locklist = self.getURLLocktokenList(parentdisplaypath)
          for locklisttoken in locklist:
             if self.getLockProperty(locklisttoken, 'LOCKDEPTH') == 'infinity':
@@ -494,7 +497,7 @@ def getProperty(pm, lm, mappedpath, displaypath, propns, propname, etagprovider)
             return ('text/html', "200 OK")
       elif propname == 'resourcetype':
          if os.path.isdir(mappedpath):
-            return ('<collection />', "200 OK")            
+            return ('<D:collection />', "200 OK")            
          else:
             return ('', "200 OK")   
       elif propname == 'getlastmodified':
@@ -513,14 +516,14 @@ def getProperty(pm, lm, mappedpath, displaypath, propns, propname, etagprovider)
          lockinfo = ''         
          activelocklist = lm.getURLLocktokenList(displaypath)
          for activelocktoken in activelocklist:
-            lockinfo = lockinfo + '<activelock>\n'
-            lockinfo = lockinfo + '<locktype><' + lm.getLockProperty(activelocktoken, 'LOCKTYPE') + '/></locktype>\n'
-            lockinfo = lockinfo + '<lockscope><' + lm.getLockProperty(activelocktoken, 'LOCKSCOPE') + '/></lockscope>\n'
-            lockinfo = lockinfo + '<depth>' + lm.getLockProperty(activelocktoken, 'LOCKDEPTH') + '</depth>\n'
-            lockinfo = lockinfo + '<owner>' + lm.getLockProperty(activelocktoken, 'LOCKOWNER') + '</owner>\n'
-            lockinfo = lockinfo + '<timeout>' + lm.getLockProperty(activelocktoken, 'LOCKTIME') + '</timeout>\n'
-            lockinfo = lockinfo + '<locktoken><href>' + activelocktoken + '</href></locktoken>\n'
-            lockinfo = lockinfo + '</activelock>\n'
+            lockinfo = lockinfo + '<D:activelock>\n'
+            lockinfo = lockinfo + '<D:locktype><' + lm.getLockProperty(activelocktoken, 'LOCKTYPE') + '/></D:locktype>\n'
+            lockinfo = lockinfo + '<D:lockscope><' + lm.getLockProperty(activelocktoken, 'LOCKSCOPE') + '/></D:lockscope>\n'
+            lockinfo = lockinfo + '<D:depth>' + lm.getLockProperty(activelocktoken, 'LOCKDEPTH') + '</D:depth>\n'
+            lockinfo = lockinfo + '<D:owner>' + lm.getLockProperty(activelocktoken, 'LOCKOWNER') + '</D:owner>\n'
+            lockinfo = lockinfo + '<D:timeout>' + lm.getLockProperty(activelocktoken, 'LOCKTIME') + '</D:timeout>\n'
+            lockinfo = lockinfo + '<D:locktoken><D:href>' + activelocktoken + '</D:href></D:locktoken>\n'
+            lockinfo = lockinfo + '</D:activelock>\n'
          return (lockinfo, "200 OK")
       elif propname == 'supportedlock':
          return ('<D:lockentry xmlns:D=\"DAV:\" >\n<D:lockscope><D:exclusive/></D:lockscope>\n<D:locktype><D:write/></D:locktype>\n</D:lockentry>\n<D:lockentry xmlns:D=\"DAV:\" >\n<D:lockscope><D:shared/></D:lockscope>\n<D:locktype><D:write/></D:locktype>\n</D:lockentry>', "200 OK")

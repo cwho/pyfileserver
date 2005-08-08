@@ -509,11 +509,11 @@ class RequestServer(object):
          yield ''      
       elif len(dictError) > 0:
          start_response('207 Multi Status', [('Content-Length','0')])
-         yield "<?xml version='1.0' ?>\n<multistatus xmlns='DAV:'>"
+         yield "<?xml version='1.0' ?>\n<D:multistatus xmlns:D='DAV:'>"
          for filedisplaypath in dictError.keys():
-            yield "<response>\n<href>" + websupportfuncs.constructFullURL(filedisplaypath, environ) + "</href>"            
-            yield "<status>HTTP/1.1 " + dictError[filedisplaypath] + "</status>\n</response>"            
-         yield "</multistatus>"
+            yield "<D:response>\n<D:href>" + websupportfuncs.constructFullURL(filedisplaypath, environ) + "</D:href>"            
+            yield "<D:status>HTTP/1.1 " + dictError[filedisplaypath] + "</D:status>\n</D:response>"            
+         yield "</D:multistatus>"
       else:
          start_response('204 No Content', [('Content-Length','0')])
          yield ''
@@ -593,42 +593,48 @@ class RequestServer(object):
       start_response('207 Multistatus', [('Content-Type','text/xml'), ('Date',httpdatehelper.getstrftime())])
    
       if successflag:
-         yield "<?xml version='1.0' ?>\n<multistatus xmlns='DAV:'>\n<response>"
-         yield "<href>" + websupportfuncs.constructFullURL(displaypath, environ) + "</href>"    
+         yield "<?xml version='1.0' ?>\n<D:multistatus xmlns:D='DAV:'>\n<D:response>"
+         yield "<D:href>" + websupportfuncs.constructFullURL(displaypath, environ) + "</D:href>"    
          laststatus = ''
          for (propns, propname , propmethod , propvalue) in propupdatelist:
             propstatus = propertylibrary.writeProperty(self._propertymanager, mappedpath, displaypath, propns, propname , propmethod , propvalue, True)
             if laststatus == '':
-               yield "<propstat>\n<prop>"                                  
+               yield "<D:propstat>\n<D:prop>"                                  
             if propstatus != laststatus and laststatus != '':
-               yield "</prop>\n<status>HTTP/1.1 " + laststatus + "</status>\n</propstat>\n<propstat>\n<prop>" 
+               yield "</D:prop>\n<D:status>HTTP/1.1 " + laststatus + "</D:status>\n</D:propstat>\n<D:propstat>\n<D:prop>" 
             if propns == 'DAV:':
-               yield "<" + propname + "/>"
+               yield "<D:" + propname + "/>"
             else:
-               yield "<" + propname + " xmlns='" + propns + "' />"
+               if propns != None and propns != '':
+                  yield "<A:" + propname + " xmlns:A='" + propns + "'/>"
+               else:
+                  yield "<" + propname + " xmlns='" + propns + "'/>"
             laststatus = propstatus
          if laststatus != '':
-            yield "</prop>\n<status>HTTP/1.1 " + laststatus + "</status>\n</propstat>"         
-         yield "</response>\n</multistatus>"
+            yield "</D:prop>\n<D:status>HTTP/1.1 " + laststatus + "</D:status>\n</D:propstat>"         
+         yield "</D:response>\n</D:multistatus>"
       else:
-         yield "<?xml version='1.0' ?>\n<multistatus xmlns='DAV:'>\n<response>"
-         yield "<href>" + websupportfuncs.constructFullURL(displaypath, environ) + "</href>"    
+         yield "<?xml version='1.0' ?>\n<D:multistatus xmlns:D='DAV:'>\n<D:response>"
+         yield "<D:href>" + websupportfuncs.constructFullURL(displaypath, environ) + "</D:href>"    
          laststatus = ''
          for (propns, propname, propstatus) in writeresultlist:
             if propstatus == '200 OK':
                propstatus = '424 Failed Dependency'
             if laststatus == '':
-               yield "<propstat>\n<prop>"                                  
+               yield "<D:propstat>\n<D:prop>"                                  
             if propstatus != laststatus and laststatus != '':
-               yield "</prop>\n<status>HTTP/1.1 " + laststatus + "</status>\n</propstat>\n<propstat>\n<prop>" 
+               yield "</D:prop>\n<D:status>HTTP/1.1 " + laststatus + "</D:status>\n</D:propstat>\n<D:propstat>\n<D:prop>" 
             if propns == 'DAV:':
-               yield "<" + propname + "/>"
+               yield "<D:" + propname + "/>"
             else:
-               yield "<" + propname + " xmlns='" + propns + "' />"
+               if propns != None and propns != '':
+                  yield "<A:" + propname + " xmlns:A='" + propns + "'/>"
+               else:
+                  yield "<" + propname + " xmlns='" + propns + "'/>"
             laststatus = propstatus
          if laststatus != '':
-            yield "</prop>\n<status>HTTP/1.1 " + laststatus + "</status>\n</propstat>"         
-         yield "</response>\n</multistatus>"
+            yield "</D:prop>\n<D:status>HTTP/1.1 " + laststatus + "</D:status>\n</D:propstat>"         
+         yield "</D:response>\n</D:multistatus>"
       return
    
    # does not yet support If and If HTTP Conditions   
@@ -661,8 +667,7 @@ class RequestServer(object):
             requestbody = requestbody + readbuffer
          
       if requestbody == '':
-         requestbody = '<DAV:propfind><DAV:allprop/></DAV:propfind>'
-      
+         requestbody = "<D:propfind xmlns:D='DAV:'><D:allprop/></D:propfind>"      
       print requestbody
          
       try:
@@ -672,6 +677,9 @@ class RequestServer(object):
       pfroot = doc.documentElement
       if pfroot.namespaceURI != 'DAV:' or pfroot.localName != 'propfind':
          raise HTTPRequestException(processrequesterrorhandler.HTTP_BAD_REQUEST)   
+
+      if not os.path.exists(mappedpath):
+         raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND)
 
       reslist = websupportfuncs.getDepthActionList(mappedpath, displaypath, environ['HTTP_DEPTH'], True)
             
@@ -696,22 +704,25 @@ class RequestServer(object):
       start_response('207 Multistatus', [('Content-Type','text/xml'), ('Date',httpdatehelper.getstrftime())])
 
       yield "<?xml version='1.0' ?>"
-      yield "<multistatus xmlns='DAV:'>"
+      yield "<D:multistatus xmlns:D='DAV:'>"
       for (respath , resdisplayname) in reslist:
-         yield "<response>"
-         yield "<href>" + websupportfuncs.constructFullURL(resdisplayname, environ) + "</href>"    
+         yield "<D:response>"
+         yield "<D:href>" + websupportfuncs.constructFullURL(resdisplayname, environ) + "</D:href>"    
 
          if propFindMode == 1 or propFindMode == 2:
             propList = propertylibrary.getApplicablePropertyNames(self._propertymanager, respath, resdisplayname)
             
          if propFindMode == 2:
-            yield "<propstat>\n<prop>"
+            yield "<D:propstat>\n<D:prop>"
             for (propns, propname) in propList:
                if propns == 'DAV:':
-                  yield "<" + propname + "/>"
+                  yield "<D:" + propname + "/>"
                else:
-                  yield "<" + propname + " xmlns='" + propns + "'/>"
-            yield "</prop>\n<status>HTTP/1.1 200 OK</status>\n</propstat>"
+                  if propns != None and propns != '':
+                     yield "<A:" + propname + " xmlns:A='" + propns + "'/>"
+                  else:
+                     yield "<" + propname + " xmlns='" + propns + "'/>"
+            yield "</D:prop>\n<D:status>HTTP/1.1 200 OK</D:status>\n</D:propstat>"
          else:
             laststatus = ''
             for (propns, propname) in propList:
@@ -723,24 +734,29 @@ class RequestServer(object):
                   propvalue = ''
                   propstatus = processrequesterrorhandler.interpretErrorException(e)
                if laststatus == '':
-                  yield "<propstat>\n<prop>"                                  
+                  yield "<D:propstat>\n<D:prop>"                                  
                if propstatus != laststatus and laststatus != '':
-                  yield "</prop>\n<status>HTTP/1.1 " + laststatus + "</status>\n</propstat>\n<propstat>\n<prop>" 
+                  yield "</D:prop>\n<D:status>HTTP/1.1 " + laststatus + "</D:status>\n</D:propstat>\n<D:propstat>\n<D:prop>" 
                if propvalue == None:
                   propvalue = '';               
                if propns == 'DAV:':
-                  yield "<" + propname + ">"
+                  yield "<D:" + propname + ">"
                   yield propvalue.encode('utf-8') 
-                  yield "</"+propname+">"
+                  yield "</D:"+propname+">"
                else:
-                  yield "<" + propname + " xmlns='" + propns + "' >"
-                  yield propvalue.encode('utf-8') 
-                  yield "</"+propname+">"
+                  if propns != None and propns != '':
+                     yield "<A:" + propname + " xmlns:A='" + propns + "' >"
+                     yield propvalue.encode('utf-8') 
+                     yield "</A:"+propname+">"
+                  else:
+                     yield "<" + propname + " xmlns='" + propns + "' >"
+                     yield propvalue.encode('utf-8') 
+                     yield "</"+propname+">"
                laststatus = propstatus
             if laststatus != '':
-               yield "</prop>\n<status>HTTP/1.1 " + laststatus + "</status>\n</propstat>"         
-         yield "</response>"
-      yield "</multistatus>"      
+               yield "</D:prop>\n<D:status>HTTP/1.1 " + laststatus + "</D:status>\n</D:propstat>"         
+         yield "</D:response>"
+      yield "</D:multistatus>"      
       return 
 
    def doCOPY(self, environ, start_response):
@@ -831,7 +847,7 @@ class RequestServer(object):
                else:   
                   shutil.copy2(filepath, destfilepath)
                self._propertymanager.copyProperties(filedisplaypath, destfiledisplaypath)     
-               self._lockmanager.checkLocksToAdd(displaypath)
+               self._lockmanager.checkLocksToAdd(destfiledisplaypath)
 
             except HTTPRequestException, e:
                dictError[destfiledisplaypath] = processrequesterrorhandler.interpretErrorException(e)
@@ -849,11 +865,11 @@ class RequestServer(object):
          yield ''      
       elif len(dictError) > 0:
          start_response('207 Multi Status', [('Content-Length','0')])
-         yield "<?xml version='1.0' ?>\n<multistatus xmlns='DAV:'>"
+         yield "<?xml version='1.0' ?>\n<D:multistatus xmlns:D='DAV:'>"
          for filedisplaypath in dictError.keys():
-            yield "<response>\n<href>" + websupportfuncs.constructFullURL(filedisplaypath, environ) + "</href>"            
-            yield "<status>HTTP/1.1 " + dictError[filedisplaypath] + "</status>\n</response>"            
-         yield "</multistatus>"
+            yield "<D:response>\n<D:href>" + websupportfuncs.constructFullURL(filedisplaypath, environ) + "</D:href>"            
+            yield "<D:status>HTTP/1.1 " + dictError[filedisplaypath] + "</D:status>\n</D:response>"            
+         yield "</D:multistatus>"
       else:
          if destexists:
             start_response('204 No Content', [('Content-Length','0')])         
@@ -954,7 +970,7 @@ class RequestServer(object):
                else:   
                   shutil.copy2(filepath, destfilepath)
                self._propertymanager.copyProperties(filedisplaypath, destfiledisplaypath)     
-               self._lockmanager.checkLocksToAdd(displaypath)
+               self._lockmanager.checkLocksToAdd(destfiledisplaypath)
 
             except HTTPRequestException, e:
                dictError[destfiledisplaypath] = processrequesterrorhandler.interpretErrorException(e)
@@ -993,11 +1009,11 @@ class RequestServer(object):
          yield ''      
       elif len(dictError) > 0:
          start_response('207 Multi Status', [('Content-Length','0')])
-         yield "<?xml version='1.0' ?>\n<multistatus xmlns='DAV:'>"
+         yield "<?xml version='1.0' ?>\n<D:multistatus xmlns:D='DAV:'>"
          for filedisplaypath in dictError.keys():
-            yield "<response>\n<href>" + websupportfuncs.constructFullURL(filedisplaypath, environ) + "</href>"            
-            yield "<status>HTTP/1.1 " + dictError[filedisplaypath] + "</status>\n</response>"            
-         yield "</multistatus>"
+            yield "<D:response>\n<D:href>" + websupportfuncs.constructFullURL(filedisplaypath, environ) + "</D:href>"            
+            yield "<D:status>HTTP/1.1 " + dictError[filedisplaypath] + "</D:status>\n</D:response>"            
+         yield "</D:multistatus>"
       else:
          if destexists:
             start_response('204 No Content', [('Content-Length','0')])         
@@ -1054,7 +1070,7 @@ class RequestServer(object):
          self.evaluateSingleIfConditionalDoException( mappedpath, displaypath, environ, start_response, True)
          self.evaluateSingleHTTPConditionalsDoException( mappedpath, displaypath, environ, start_response)
 
-         optlocklist = environ['pyfileserver.conditions.locklistcheck']
+         optlocklist = environ.get('pyfileserver.conditions.locklistcheck',[])
          for locklisttoken in optlocklist:
             self._lockmanager.refreshLock(locklisttoken,timeoutsecs)
             genlocktoken = locklisttoken
@@ -1078,20 +1094,22 @@ class RequestServer(object):
          for linode in liroot.childNodes:
             if linode.namespaceURI == 'DAV:' and linode.localName == 'lockscope':
                for lsnode in linode.childNodes:
-                  if lsnode.namespaceURI == 'DAV:' and lsnode.localName == 'exclusive': 
-                     lockscope = 'exclusive' 
-                  elif lsnode.namespaceURI == 'DAV:' and lsnode.localName == 'shared': 
-                     lockscope = 'shared'
-                  else:
-                     raise HTTPRequestException(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
-                  break               
+                  if lsnode.nodeType == xml.dom.Node.ELEMENT_NODE:
+                     if lsnode.namespaceURI == 'DAV:' and lsnode.localName == 'exclusive': 
+                        lockscope = 'exclusive' 
+                     elif lsnode.namespaceURI == 'DAV:' and lsnode.localName == 'shared': 
+                        lockscope = 'shared'
+                     else:
+                        raise HTTPRequestException(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
+                     break               
             elif linode.namespaceURI == 'DAV:' and linode.localName == 'locktype':
                for ltnode in linode.childNodes:
-                  if ltnode.namespaceURI == 'DAV:' and ltnode.localName == 'write': 
-                     locktype = 'write'   # only type accepted
-                  else:
-                     raise HTTPRequestException(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
-                  break
+                  if ltnode.nodeType == xml.dom.Node.ELEMENT_NODE:
+                     if ltnode.namespaceURI == 'DAV:' and ltnode.localName == 'write': 
+                        locktype = 'write'   # only type accepted
+                     else:
+                        raise HTTPRequestException(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
+                     break
             elif linode.namespaceURI == 'DAV:' and linode.localName == 'owner':
                if len(linode.childNodes) == 1 and linode.firstChild.nodeType == xml.dom.Node.TEXT_NODE:
                   lockowner = linode.firstChild.nodeValue
@@ -1102,7 +1120,7 @@ class RequestServer(object):
                   lockowner = lockownerstream.getvalue()
                   lockownerstream.close()                        
 
-         genlocktoken = self._lockmanager.generateLock(environ['pyfileserver.username'], locktype, lockscope, lockdepth, lockowner, timeoutsecs)
+         genlocktoken = self._lockmanager.generateLock(environ['pyfileserver.username'], locktype, lockscope, lockdepth, lockowner, websupportfuncs.constructFullURL(displaypath, environ), timeoutsecs)
 
          reslist = websupportfuncs.getDepthActionList(mappedpath, displaypath, environ['HTTP_DEPTH'], True)
          for (filepath, filedisplaypath) in reslist:
@@ -1143,10 +1161,10 @@ class RequestServer(object):
          else:                     
             start_response( "200 OK", [('Content-Type','text/xml'),('Lock-Token',genlocktoken)])
             yield "<?xml version=\'1.0\' ?>"
-            yield "<prop xmlns=\'DAV:\'><lockdiscovery>"            
+            yield "<D:prop xmlns:D=\'DAV:\'><D:lockdiscovery>"            
             (propvalue, propstatus) = propertylibrary.getProperty(self._propertymanager, self._lockmanager, mappedpath, displaypath, 'DAV:', 'lockdiscovery', self._etagprovider)   
             yield propvalue
-            yield '</lockdiscovery></prop>'
+            yield '</D:lockdiscovery></D:prop>'
             return
       else: 
          if lockfailure:
@@ -1154,25 +1172,25 @@ class RequestServer(object):
          else:
             start_response("200 OK", [('Content-Type','text/xml'),('Lock-Token',genlocktoken)])
          yield "<?xml version='1.0' ?>"
-         yield "<multistatus xmlns='DAV:'>"
+         yield "<D:multistatus xmlns:D='DAV:'>"
          for (filepath, filedisplaypath) in reslist:
-            yield "<response>"
-            yield "<href>" + websupportfuncs.constructFullURL(filedisplaypath, environ) + "</href>"
+            yield "<D:response>"
+            yield "<D:href>" + websupportfuncs.constructFullURL(filedisplaypath, environ) + "</D:href>"
             if dictStatus[filedisplaypath] == '200 OK':
-               yield "<propstat>"
-               yield "<prop><lockdiscovery>"
+               yield "<D:propstat>"
+               yield "<D:prop><D:lockdiscovery>"
                (propvalue, propstatus) = propertylibrary.getProperty(self._propertymanager, self._lockmanager, filepath, filedisplaypath, 'DAV:', 'lockdiscovery', self._etagprovider)   
                yield propvalue
-               yield "</lockdiscovery></prop>"
+               yield "</D:lockdiscovery></D:prop>"
                if lockfailure:
-                  yield "<status>HTTP/1.1 424 Failed Dependency</status>"
+                  yield "<D:status>HTTP/1.1 424 Failed Dependency</D:status>"
                else:
-                  yield "<status>HTTP/1.1 200 OK</status>"
-               yield "</propstat>"
+                  yield "<D:status>HTTP/1.1 200 OK</D:status>"
+               yield "</D:propstat>"
             else: 
-               yield "<status>HTTP/1.1 " + dictStatus[filedisplaypath] + "</status>"
-            yield "</response>"
-         yield "</multistatus>"      
+               yield "<D:status>HTTP/1.1 " + dictStatus[filedisplaypath] + "</D:status>"
+            yield "</D:response>"
+         yield "</D:multistatus>"      
       return
 
    def doUNLOCK(self, environ, start_response):
@@ -1218,16 +1236,20 @@ class RequestServer(object):
          entitytag = '[]' # Non-valid entity tag
          locktokenlist = self._lockmanager.getURLLocktokenListOfUser(displaypath,environ['pyfileserver.username']) #null resources lock token not implemented yet
          isnewfile = True
-      returnlocklist = []   
-      if not websupportfuncs.testIfHeaderDict(testDict, displaypath, locktokenlist, entitytag, returnlocklist, environ):
+
+      fullurl = websupportfuncs.constructFullURL(displaypath, environ)
+      if not websupportfuncs.testIfHeaderDict(testDict, fullurl, locktokenlist, entitytag):
          raise HTTPRequestException(processrequesterrorhandler.HTTP_PRECONDITION_FAILED) 
-      environ['pyfileserver.conditions.locklistcheck'] = returnlocklist 
-      if checkLock:
-         print 'LockTokenList', locktokenlist
-         print 'ReturnLockList', returnlocklist  
-         if self._lockmanager.isURLLocked(displaypath) != None:
-            if len(returnlocklist) == 0:
-               raise HTTPRequestException(processrequesterrorhandler.HTTP_LOCKED)
+
+      if checkLock and self._lockmanager.isURLLocked(displaypath) != None:
+         hasValidLockToken = False
+         for locktoken in locktokenlist:
+            headurl = self._lockmanager.getLockProperty(locktoken, 'LOCKHEADURL')
+            if websupportfuncs.testForLockTokenInIfHeaderDict(testDict, locktoken, fullurl, headurl):
+               environ['pyfileserver.conditions.locklistcheck'] = [locktoken]
+               hasValidLockToken = True
+         if not hasValidLockToken:
+            raise HTTPRequestException(processrequesterrorhandler.HTTP_LOCKED)
          
 
    def evaluateSingleHTTPConditionalsDoException(self, mappedpath, displaypath, environ, start_response):
