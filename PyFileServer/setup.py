@@ -18,7 +18,7 @@ directories over the web. It is based on the wsgi interface
 
 It comes bundled with a simple wsgi webserver. 
 """,
-      classifiers=["Development Status :: 3 - Alpha",
+      classifiers=["Development Status :: 4 - Beta",
                    "Intended Audience :: Information Technology, Developers, System Administrators",
                    "License :: OSI Approved :: Lesser GNU Public License",
                    "Programming Language :: Python",
@@ -29,9 +29,9 @@ It comes bundled with a simple wsgi webserver.
       author_email="fuzzybr80@gmail.com",
       url="http://pyfilesync.berlios.de",
       license="LGPL",
-      install_requires = ["PyXML>=0.8"]
+      install_requires = ["PyXML"],
       packages=find_packages(exclude=[]),
-      package_data={'': ['*.txt', '*.conf']},
+      package_data={'': ['*.txt', '*.html', '*.conf']},
       zip_safe=False,
       extras_require={}
       )
