@@ -81,8 +81,16 @@ def getDepthActionList(mappedpath, displaypath, depthlevel, preadd=True):
       
 def getCopyDepthActionList(depthactionlist, origpath, origdisplaypath, destpath, destdisplaypath):
    listReturn = []
+      
+   origdisplaypathL = origdisplaypath
+   if origdisplaypathL.endswith(URL_SEP):
+      origdisplaypathL = origdisplaypathL[:-1]
+   destdisplaypathL = destdisplaypath
+   if destdisplaypathL.endswith(URL_SEP):
+      destdisplaypathL = destdisplaypathL[:-1]
+   
    for (filepath, filedisplaypath) in depthactionlist:
-      listReturn.append( ( destpath + filepath[len(origpath):] , destdisplaypath + filedisplaypath[len(origdisplaypath):] )  )      
+      listReturn.append( ( destpath + filepath[len(origpath):] , destdisplaypathL + filedisplaypath[len(origdisplaypathL):] )  )      
    return listReturn
 
 def getLevelUpURL(displayPath):

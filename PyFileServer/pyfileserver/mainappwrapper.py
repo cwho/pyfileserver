@@ -28,6 +28,7 @@ from pyfiledomaincontroller import PyFileServerDomainController
 from propertylibrary import PropertyManager
 from propertylibrary import LockManager
 import websupportfuncs
+import httpdatehelper
 
 class PyFileApp(object):
    
@@ -61,6 +62,8 @@ class PyFileApp(object):
                    
       self._srvcfg = servcfg
       self._infoHeader = '<A href=\"mailto:' + servcfg.get('Info_AdminEmail','') + '\">Administrator</A> at ' + servcfg.get('Info_Organization','')
+
+      self._verbose = servcfg.get('verbose', 0)
 
       # file locations
       
@@ -102,30 +105,27 @@ class PyFileApp(object):
       environ['pyfileserver.config'] = self._srvcfg
       environ['pyfileserver.trailer'] = self._infoHeader
 
-      print "Request Headers"
-      print "---------------------------------------------"
-#      # for debugging purposes
-      for envitem in environ.keys():
-         if envitem == envitem.upper() and envitem.startswith('HTTP'):
-            print "\t", envitem, ":\t", repr(environ[envitem]) 
-         if envitem == 'REQUEST_METHOD':
-            print "\t", envitem, ":\t", repr(environ[envitem]) 
-         if envitem == 'PATH_INFO':
-            print "\t", envitem, ":\t", repr(environ[envitem]) 
-         if envitem == 'CONTENT_LENGTH':
-            print "\t", envitem, ":\t", repr(environ[envitem]) 
-      # end
-      print "---------------------------------------------"
-#      print websupportfuncs.constructFullURL(environ)      
-      
-      def _start_response(respcode, headers, excinfo=None):
-         print 'Response code:', respcode
-         print 'Headers:', headers
+      if self._verbose == 1:
+         print '[',httpdatehelper.getstrftime(),'] from ', environ.get('REMOTE_ADDR','unknown'), ' ', environ.get('REQUEST_METHOD','unknown'), ' ', environ.get('PATH_INFO','unknown'), ' ', environ.get('HTTP_DESTINATION', '')
+      elif self._verbose == 2:      
+         print "<======== Request Environ"
+         for envitem in environ.keys():
+            if envitem == envitem.upper():
+               print "\t", envitem, ":\t", repr(environ[envitem]) 
+         print "\n"
+     
+      def _start_response(respcode, headers, excinfo=None):   
+         if self._verbose == 2:
+            print "=========> Response"
+            print 'Response code:', respcode
+            headersdict = dict(headers)
+            for envitem in headersdict.keys():
+               print "\t", envitem, ":\t", repr(headersdict[envitem]) 
+            print "\n"
          return start_response(respcode, headers, excinfo)
 
-      print "Response"
       for v in iter(self._application(environ, _start_response)):
-         if environ['REQUEST_METHOD'] != 'GET':
+         if self._verbose == 2 and environ['REQUEST_METHOD'] != 'GET':
             print v
          yield v 
       

@@ -1,3 +1,4 @@
+
 TODO
 ====
 
@@ -57,7 +58,7 @@ as a result of conflicts at the filesystem level:
    MOVE can be done even if a write LOCK is obtained since the file 
    remains locked by filesystem level. 
 
-   Note: some *nix file systems do support deleting a read-open file. 
+   Note: some file systems do support deleting a read-open file. 
    The file is deleted but remains available to the read handle until 
    it is closed.
 
@@ -77,7 +78,7 @@ filesystem to crash or enter an inconsistent/unstable state.
 
 Three solutions have been identified:
 
-Optimistic Locking
+**Optimistic Locking**
    This assumes that most operations go forward successfully. If it does 
    not due to the filesystem (as evidenced by a 500 Internal Server Error 
    flagged for an operation), then the entire request should be rollbacked 
@@ -99,7 +100,7 @@ Optimistic Locking
    fail. Also partial MOVE/COPY operations may be difficult to rollback.
 
 
-File Locking
+**File Locking**
    A WRITE request could block until it has obtained all the filesystem level
    locks on all the files it should process. It needs to address the following:
 
@@ -112,7 +113,7 @@ File Locking
      possibility of this happening.
 
 
-Variable Locking
+**Variable Locking**
    This is a complex locking mechanism, when requests identified as possibly 
    conflicting are prevented from being executed concurrently by a blocking 
    lock. Conflicting requests can be loosely identified as the request URLs 

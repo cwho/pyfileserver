@@ -193,7 +193,6 @@ class RequestResolver(object):
 
         if requestmethod == 'OPTIONS':
             return self.doOPTIONSSpec(environ, start_response)
-
       
         return self._application(environ, start_response)
 
@@ -208,9 +207,9 @@ class RequestResolver(object):
     def doOPTIONSSpec(self, environ, start_response):
         mappedpath = environ['pyfileserver.mappedpath']
         if os.path.isdir(mappedpath):
-            start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET PROPFIND PROPPATCH COPY MOVE'), ('DAV','1,2'), ('Server','DAV/2'),('Date',httpdatehelper.getstrftime())])      
+            start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET DELETE PROPFIND PROPPATCH COPY MOVE LOCK UNLOCK'), ('DAV','1,2'), ('Server','DAV/2'),('Date',httpdatehelper.getstrftime())])      
         elif os.path.isfile(mappedpath):
-            start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET PUT DELETE PROPFIND PROPPATCH COPY MOVE'), ('DAV','1,2'), ('Allow-Ranges','bytes'), ('Date',httpdatehelper.getstrftime())])            
+            start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET PUT DELETE PROPFIND PROPPATCH COPY MOVE LOCK UNLOCK'), ('DAV','1,2'), ('Allow-Ranges','bytes'), ('Date',httpdatehelper.getstrftime())])            
         elif os.path.isdir(os.path.dirname(mappedpath)):
             start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS PUT MKCOL'), ('DAV','1,2'), ('Date',httpdatehelper.getstrftime())])      
         else:

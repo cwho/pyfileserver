@@ -122,8 +122,6 @@ class RequestServer(object):
       mappedpath = environ['pyfileserver.mappedpath']
       displaypath =  environ['pyfileserver.mappedURI']
 
-      print 'Lock Dict', repr(self._lockmanager)
-
       if (requestmethod == 'GET' or requestmethod == 'HEAD'):
          if os.path.isdir(mappedpath): 
             return self.doGETHEADDirectory(environ, start_response)
@@ -250,9 +248,9 @@ class RequestServer(object):
    def doOPTIONS(self, environ, start_response):
       mappedpath = environ['pyfileserver.mappedpath']
       if os.path.isdir(mappedpath):
-         start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET PROPFIND PROPPATCH COPY MOVE'), ('DAV','1,2'), ('Date',httpdatehelper.getstrftime())])      
+         start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET DELETE PROPFIND PROPPATCH COPY MOVE LOCK UNLOCK'), ('DAV','1,2'), ('Date',httpdatehelper.getstrftime())])      
       elif os.path.isfile(mappedpath):
-         start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET PUT DELETE PROPFIND PROPPATCH COPY MOVE'), ('DAV','1,2'), ('Allow-Ranges','bytes'), ('Date',httpdatehelper.getstrftime())])            
+         start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET PUT DELETE PROPFIND PROPPATCH COPY MOVE LOCK UNLOCK'), ('DAV','1,2'), ('Allow-Ranges','bytes'), ('Date',httpdatehelper.getstrftime())])            
       elif os.path.isdir(os.path.dirname(mappedpath)):
          start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS PUT MKCOL'), ('DAV','1,2'), ('Date',httpdatehelper.getstrftime())])      
       else:
@@ -550,8 +548,6 @@ class RequestServer(object):
             contentlengthtoread = contentlengthtoread - readsize
             requestbody = requestbody + readbuffer
 
-      print requestbody
-                     
       try:
          doc = Sax2.Reader().fromString(requestbody)
       except Exception:
@@ -668,8 +664,7 @@ class RequestServer(object):
          
       if requestbody == '':
          requestbody = "<D:propfind xmlns:D='DAV:'><D:allprop/></D:propfind>"      
-      print requestbody
-         
+
       try:
          doc = Sax2.Reader().fromString(requestbody)
       except Exception:
@@ -1053,8 +1048,6 @@ class RequestServer(object):
             contentlengthtoread = contentlengthtoread - readsize
             requestbody = requestbody + readbuffer
                
-      print requestbody
-
       if 'HTTP_TIMEOUT' not in environ:
          environ['HTTP_TIMEOUT'] = '' # reader function will return default
       timeoutsecs = propertylibrary.readTimeoutValueHeader(environ['HTTP_TIMEOUT'])         
@@ -1214,7 +1207,6 @@ class RequestServer(object):
 
 
                 
-   # if checkLock is True, and url is locked, then a locktoken must be matched in If
    def evaluateSingleIfConditionalDoException(self, mappedpath, displaypath, environ, start_response, checkLock = False):
       if 'HTTP_IF' not in environ:
          if checkLock:
@@ -1223,7 +1215,6 @@ class RequestServer(object):
          return
       if 'pyfileserver.conditions.if' not in environ:
          environ['pyfileserver.conditions.if'] = websupportfuncs.getIfHeaderDict(environ['HTTP_IF'])
-         print 'Condition Dict', environ['pyfileserver.conditions.if']
       testDict = environ['pyfileserver.conditions.if']
       if os.path.exists(mappedpath):
          statresults = os.stat(mappedpath)

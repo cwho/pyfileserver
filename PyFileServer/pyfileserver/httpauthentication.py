@@ -34,6 +34,7 @@ Usage::
 
 The HTTPAuthenticator will put the following authenticated information in the 
 environ dictionary::
+   
    environ['httpauthentication.realm'] = realm name
    environ['httpauthentication.username'] = username
    
