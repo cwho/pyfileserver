@@ -277,7 +277,7 @@ class RequestServer(object):
       self.evaluateSingleHTTPConditionalsDoException( mappedpath, displaypath, environ, start_response)
       
       trailer = ''
-      if 'pyfileserver' in environ:
+      if 'pyfileserver.trailer' in environ:
          trailer = environ['pyfileserver.trailer']
 
       proc_response = ''

@@ -6,6 +6,21 @@ __version__ = "0.1"
 
 from ez_setup import use_setuptools
 use_setuptools()
+
+
+#manual check for dependencies: PyXML - somehow installer unable to find on PyPI.
+import sys
+
+print "\nChecking manual dependencies...\n"
+try:
+   import xml.dom.ext
+   import xml.dom.ext.reader
+except ImportError:
+   print "Failed to detect PyXML. PyXML is required for PyFileServer. Please install"
+   print "PyXML <http://pyxml.sourceforge.net/> before installing PyFileServer"
+   sys.exit(-1)
+
+
 from setuptools import setup, find_packages
 
 setup(name="PyFileServer",
@@ -29,7 +44,7 @@ It comes bundled with a simple wsgi webserver.
       author_email="fuzzybr80@gmail.com",
       url="http://pyfilesync.berlios.de",
       license="LGPL",
-      install_requires = ["PyXML"],
+      install_requires = [],
       packages=find_packages(exclude=[]),
       package_data={'': ['*.txt', '*.html', '*.conf']},
       zip_safe=False,

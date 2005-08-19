@@ -245,9 +245,11 @@ class HTTPAuthenticator(object):
         else:
             isinvalidreq = True
 
-        if 'realm' in authheaderdict:
-            if authheaderdict['realm'].upper() != realmname.upper():
-                isinvalidreq = True
+        # Do not do realm checking - a hotfix for WinXP using some other realm's
+        # auth details for this realm - if user/password match
+        #if 'realm' in authheaderdict:
+        #    if authheaderdict['realm'].upper() != realmname.upper():
+        #        isinvalidreq = True
         
         if 'algorithm' in authheaderdict:
             if authheaderdict['algorithm'].upper() != "MD5":
@@ -290,8 +292,9 @@ class HTTPAuthenticator(object):
             isinvalidreq = True
 
         if isinvalidreq:
-            start_response("400 Bad Request", [('Content-Length', 0)])
-            return ['']
+            httpallowed = False
+#            start_response("400 Bad Request", [('Content-Length', 0)])
+#            return ['']
              
         if httpallowed:
             req_password = self._domaincontroller.getRealmUserPassword(realmname, req_username, environ)
