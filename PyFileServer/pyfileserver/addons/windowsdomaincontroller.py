@@ -66,7 +66,8 @@ Testability and caveats
    and not his own account.
 
 **Using on a local computer**
-   This class has been tested on a local computer (Windows XP).
+   This class has been tested on a local computer (Windows XP). Leave domain as None and
+   do not specify domain when entering username in this case.
 
 **Using for a network domain**
    This class is being tested for a network domain (I'm setting one up to test).
