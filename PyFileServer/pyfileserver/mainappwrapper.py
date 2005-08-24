@@ -34,7 +34,9 @@ class PyFileApp(object):
 
     def __init__(self, specifiedconfigfile = None):
 
+        # @@: is None
         if specifiedconfigfile == None:
+            # @@: os.path.abspath('PyFileServer.conf') is equivalent to this:
             specifiedconfigfile = os.getcwd() + os.sep + 'PyFileServer.conf'
 
         loadconfig = True
@@ -61,21 +63,29 @@ class PyFileApp(object):
 
 
         self._srvcfg = servcfg
+        # @@: I find string substitution much easier to read, like:
+        # '<a href="mailto:%s">Administrator</a> at %s' % (email, org)
+        # Also, you are missing out on the benefit of two quoting characters:
+        # you don't have to use \" when it's inside '' ;)
         self._infoHeader = '<A href=\"mailto:' + servcfg.get('Info_AdminEmail','') + '\">Administrator</A> at ' + servcfg.get('Info_Organization','')
 
         self._verbose = servcfg.get('verbose', 0)
 
         # file locations
 
+        # @@: None is the default second argument to .get() already:
         _locksmanagerobj = servcfg.get('locksmanager', None)
         _propsmanagerobj = servcfg.get('propsmanager', None)      
         _etagproviderfuncobj = servcfg.get('etagproviderfunction', None)
 
         _domaincontrollerobj = servcfg.get('domaincontroller', None)
 
+        # @@: Again os.path.abspath()
         _locksfile = servcfg.get('locksfile', os.getcwd() + os.sep + 'PyFileServer.locks')
         _propsfile = servcfg.get('propsfile', os.getcwd() + os.sep + 'PyFileServer.dat')
 
+        # @@: Another way to do this is:
+        # _propsmanagerobj = servcfg.get('propsmanager') or PropertyManager(_propsfile)
         if _propsmanagerobj == None:
             _propsmanagerobj = PropertyManager(_propsfile)
 
@@ -105,6 +115,7 @@ class PyFileApp(object):
         environ['pyfileserver.config'] = self._srvcfg
         environ['pyfileserver.trailer'] = self._infoHeader
 
+        # @@: Really this should be doing print >> environ['wsgi.errors'], ...
         if self._verbose == 1:
             print '[',httpdatehelper.getstrftime(),'] from ', environ.get('REMOTE_ADDR','unknown'), ' ', environ.get('REQUEST_METHOD','unknown'), ' ', environ.get('PATH_INFO','unknown'), ' ', environ.get('HTTP_DESTINATION', '')
         elif self._verbose == 2:      
