@@ -144,6 +144,9 @@ class HTTPAuthenticator(object):
         self._domaincontroller = domaincontroller
         self._application = application
         self._noncedict = dict([])
+        # @@: It's good form to use "raw" strings for regular expressions, like
+        # r"...", because this doesn't interpret \ escaping; in this case \w is
+        # save, but other \ combinations are not.
         self._headerparser = re.compile("([\w]+)=([^,]*),")
         self._headermethod = re.compile("^([\w]+)")
         
@@ -178,6 +181,8 @@ class HTTPAuthenticator(object):
                 return self.sendBasicAuthResponse(environ, start_response)
 
         #should not get here, failsafe response
+        # @@: If you shouldn't get here, you should raise an exception, so that
+        # it can be reported and debugged.
         start_response("400 Bad Request", [('Content-Length', 0)])
         return ['']        
 
@@ -185,6 +190,7 @@ class HTTPAuthenticator(object):
         realmname = self._domaincontroller.getDomainRealm(environ['PATH_INFO'] , environ)
         wwwauthheaders = "Basic realm=\"" + realmname + "\"" 
         start_response("401 Not Authorized", [('WWW-Authenticate', wwwauthheaders)])
+        # @@: This should really return some text.
         return ['']
 
     def authBasicAuthRequest(self, environ, start_response):
