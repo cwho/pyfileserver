@@ -14,6 +14,13 @@ It also includes an implementation of a LockManager and a PropertyManager for
 storage of locks and dead properties respectively. These implementations use
 shelve for file storage.
 
+@@: Use of shelve means this is only really useful in a threaded environment.
+    And if you have just a single-process threaded environment, you could get
+    nearly the same effect with a dictionary of threading.Lock() objects.  Of course,
+    it would be better to move off shelve anyway, probably to a system with
+    a directory of per-file locks, using the file locking primitives (which,
+    sadly, are not quite portable).
+
 *author note*: More documentation here required
 
 See extrequestserver.py for details::
@@ -67,6 +74,7 @@ This module is specific to the PyFileServer application.
 __docformat__ = 'reStructuredText'
 
 import os
+# @@: This is actually available without importing:
 import os.path
 import shelve
 import threading
@@ -332,6 +340,8 @@ class LockManager(object):
 MAX_FINITE_TIMEOUT_LIMIT = 10*365*24*60*60  #approx 10 years
 #LOCK_TIME_OUT_DEFAULT = 604800 # 1 week, in seconds (copied from above)
 
+# @@: You can use this instead:
+# reSecondsReader = re.compile(r'second\-([0-9]+)', re.I)
 reSecondsReader = re.compile("[Ss][Ee][Cc][Oo][Nn][Dd]\\-([0-9]+)")
 
 def readTimeoutValueHeader(timeoutvalue):
@@ -361,6 +371,11 @@ TODO possibilities:
 + separate shelf for each realm for better management and realm portability
 + better resolution locks for higher performance
 """
+
+# @@: It would probably be easy to store the properties as pickle objects
+# in a parallel directory structure to the files you are describing.
+# Pickle is expedient, but later you could use something more readable
+# (pickles aren't particularly readable)
 
 class PropertyManager(object):
 
@@ -460,6 +475,8 @@ class PropertyManager(object):
 
 
 
+# @@: I think it makes more sense if this raises an error when
+# there's a conflict, and returns nothing when there isn't.
 def writeProperty(pm, mappedpath, displaypath, propns, propname, propupdatemethod, propvalue, reallydoit = True):
     reservedprops = ['creationdate', 'displayname', 'getcontenttype','resourcetype','getlastmodified', 'getcontentlength', 'getetag', 'getcontentlanguage', 'source', 'lockdiscovery', 'supportedlock']
     if propns == None:
@@ -476,6 +493,8 @@ def writeProperty(pm, mappedpath, displaypath, propns, propname, propupdatemetho
             pm.removeProperty(displaypath, propns + ';' + propname)
     return "200 OK"      
 
+# @@: Again, I think it should return only the value, and maybe None or
+# raise a KeyError when the value isn't found.
 def getProperty(pm, lm, mappedpath, displaypath, propns, propname, etagprovider):
     if propns == None:
         propns = ''
