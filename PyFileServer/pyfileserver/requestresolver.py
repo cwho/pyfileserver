@@ -190,7 +190,8 @@ def resolveRealmURI(mapcfg, requestpath):
     # does this.  A simple assertion later on will protect against this; normalize the path
     # with os.path.normpath, then assert that it starts with the thing you expect it to start
     # with.  You don't really have to give proper HTTP error messages to hacking attempts,
-    # so letting the AssertionError go uncatched in fine.
+    # so letting the AssertionError go uncatched in fine.  Well... actually you can just raise
+    # a Bad Request error.
     relativepath = requestpath[len(mapdirprefix):]
     localheadpath = mapcfg[mapdirprefix]
 
