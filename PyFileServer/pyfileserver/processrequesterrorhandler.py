@@ -217,58 +217,57 @@ ERROR_RESPONSES[HTTP_INTERNAL_ERROR] = "An internal server error occured"
 
 
 def interpretErrorException(e):
-   if e.value in ERROR_DESCRIPTIONS:
-      return ERROR_DESCRIPTIONS[e.value]
-   else:
-      return str(e.value)
+    if e.value in ERROR_DESCRIPTIONS:
+        return ERROR_DESCRIPTIONS[e.value]
+    else:
+        return str(e.value)
 
 def getErrorCodeFromException(e):
-   return e.value
+    return e.value
 
 class HTTPRequestException(Exception):
-   def __init__(self, value):
-      self.value = value
-   def __str__(self):
-      return repr(self.value)             
-      
+    def __init__(self, value):
+        self.value = value
+    def __str__(self):
+        return repr(self.value)             
+
 class ErrorPrinter(object):
-   def __init__(self, application, server_descriptor=None, catchall=False):
-      self._application = application
-      self._server_descriptor = server_descriptor
-      self._catch_all_exceptions = catchall
-      
-   def __call__(self, environ, start_response):      
-      try:
-         try:
-            for v in iter(self._application(environ, start_response)):
-               yield v
-         except HTTPRequestException, e:
-            raise
-         except:
-            if self._catch_all_exceptions:
-               #Catch all exceptions to return as 500 Internal Error
-               traceback.print_exc(10, sys.stderr) 
-               raise HTTPRequestException(HTTP_INTERNAL_ERROR)               
+    def __init__(self, application, server_descriptor=None, catchall=False):
+        self._application = application
+        self._server_descriptor = server_descriptor
+        self._catch_all_exceptions = catchall
+
+    def __call__(self, environ, start_response):      
+        try:
+            try:
+                for v in iter(self._application(environ, start_response)):
+                    yield v
+            except HTTPRequestException, e:
+                raise
+            except:
+                if self._catch_all_exceptions:
+                    #Catch all exceptions to return as 500 Internal Error
+                    traceback.print_exc(10, sys.stderr) 
+                    raise HTTPRequestException(HTTP_INTERNAL_ERROR)               
+                else:
+                    raise
+        except HTTPRequestException, e:
+            evalue = getErrorCodeFromException(e)
+            respcode = interpretErrorException(e)
+            datestr = time.strftime('%a, %d %b %Y %H:%M:%S GMT', time.gmtime())
+
+            if evalue in ERROR_RESPONSES:                  
+                start_response(respcode, [('Content-Type', 'text/html'), ('Date', datestr)])
+
+                respbody = '<html><head><title>' + respcode + '</title></head><body><H1>' + respcode + '</H1>' 
+                respbody = respbody + ERROR_RESPONSES[evalue] + '<HR>'         
+                if self._server_descriptor:
+                    respbody = respbody + self._server_descriptor + '<BR>'
+                respbody = respbody + datestr + '</body></html>'        
+
+                yield respbody 
             else:
-               raise
-      except HTTPRequestException, e:
-         evalue = getErrorCodeFromException(e)
-         respcode = interpretErrorException(e)
-         datestr = time.strftime('%a, %d %b %Y %H:%M:%S GMT', time.gmtime())
+                start_response(respcode, [('Content-Type', 'text/html'), ('Content-Length', '0'), ('Date', datestr)])
+                yield ''
+        return
 
-         if evalue in ERROR_RESPONSES:                  
-            start_response(respcode, [('Content-Type', 'text/html'), ('Date', datestr)])
-            
-            respbody = '<html><head><title>' + respcode + '</title></head><body><H1>' + respcode + '</H1>' 
-            respbody = respbody + ERROR_RESPONSES[evalue] + '<HR>'         
-            if self._server_descriptor:
-               respbody = respbody + self._server_descriptor + '<BR>'
-            respbody = respbody + datestr + '</body></html>'        
-
-            yield respbody 
-         else:
-            start_response(respcode, [('Content-Type', 'text/html'), ('Content-Length', '0'), ('Date', datestr)])
-            yield ''
-      return
-      
-      
