@@ -1,3 +1,6 @@
+# @@: I prefer having a separate excpetion type for each response,
+# as in paste.httpexceptions.  This way you can catch just the exceptions
+# you want (or you can catch an abstract superclass to get any of them)
 """
 processrequesterrorhandler
 ==========================
@@ -226,6 +229,11 @@ def getErrorCodeFromException(e):
     return e.value
 
 class HTTPRequestException(Exception):
+    # @@: This should also take some message value, so that you can
+    # explain in more depth why the error occurred.  This is very important
+    # for debugging.  Just about every case in the code where a non-expected
+    # response is given (where 200 or 201 is typically what's expected),
+    # some explanation would be benefitial.
     def __init__(self, value):
         self.value = value
     def __str__(self):
