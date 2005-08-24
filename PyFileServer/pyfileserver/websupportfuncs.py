@@ -83,6 +83,8 @@ def getCopyDepthActionList(depthactionlist, origpath, origdisplaypath, destpath,
     listReturn = []
 
     origdisplaypathL = origdisplaypath
+    # @@: You could use:
+    # origdisplaypathL = origdisplaypathL.rstrip('/')
     if origdisplaypathL.endswith(URL_SEP):
         origdisplaypathL = origdisplaypathL[:-1]
     destdisplaypathL = destdisplaypath
@@ -285,6 +287,7 @@ def constructFullURL(displaypath, environ):
 def getRelativeURL(fullurl, environ):
     return fullurl[len("http://" + environ['HTTP_HOST']):]
 
+# @@: These should definitely use raw strings (r"")
 reIfSeparator = re.compile('(\\<([^>]+)\\>)|(\\(([^\\)]+)\\))')
 reIfHeader = re.compile('\\<([^>]+)\\>([^<]+)')
 reIfTagList = re.compile('\\(([^)]+)\\)')
