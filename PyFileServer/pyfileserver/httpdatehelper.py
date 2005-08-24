@@ -1,3 +1,7 @@
+# @@: Looks fine to me ;)
+# The diff might look bad, because somehow \r\n's are getting in here,
+# and subversion isn't making the transformation properly.  I'm hoping
+# that commit will resolve the issue in the repository.
 """
 httpdatehelper
 ==============

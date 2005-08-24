@@ -129,6 +129,23 @@ class RequestServer(object):
                 return self.doGETHEADFile(environ, start_response)
             else:
                 raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND)               
+
+
+        # @@: You could do this in a table/data-driven way, like:
+        # class RequestServer(object):
+        #     httpmethods = {}
+        #     def doPUT(): ...
+        #     httpmethods['PUT'] = doPUT
+        #     def __call__(...):
+        #         return self.httpmethods[REQUEST_METHOD](self, environ, start_response)
+        #
+        # Or like:
+        #     def __call__(self):
+        #         meth = getattr(self, 'do%s' % REQUEST_METHOD, None)
+        #         if meth is None: # method not allowed
+        #         else:
+        #             return meth(environ, start_response)
+
         elif requestmethod == 'PUT':
             return self.doPUT(environ, start_response)
         elif requestmethod == 'DELETE':
@@ -154,6 +171,11 @@ class RequestServer(object):
 
 
     def doPUT(self, environ, start_response):
+        # @@: As noted in requestresolver.py, this should just be using
+        # PATH_INFO, and the object should have mappedpath as an
+        # argument to the constructor.  This is a larger architectural
+        # issue, not fixed trivially, but it will make this interact
+        # much better with other WSGI components
         mappedpath = environ['pyfileserver.mappedpath']
         displaypath =  environ['pyfileserver.mappedURI']
 
@@ -163,6 +185,9 @@ class RequestServer(object):
         if not os.path.isdir(os.path.dirname(mappedpath)):
             raise HTTPRequestException(processrequesterrorhandler.HTTP_BAD_REQUEST)
 
+        # @@: maybe better:
+        # isnewfile = not os.path.isfile(mappedpath)
+        # if isnewfile: ...
         isnewfile = True
         if os.path.isfile(mappedpath):
             isnewfile = False
@@ -173,17 +198,23 @@ class RequestServer(object):
             entitytag = self._etagprovider(mappedpath)
         else:
             lastmodified = -1
+            # @@: Can you have meaningful etags for a non-exist files?
             entitytag = self._etagprovider(mappedpath)
 
         if isnewfile:
             urlparentpath = websupportfuncs.getLevelUpURL(displaypath)      
             if self._lockmanager.isURLLocked(urlparentpath):
+                # @@: That's a long signature; you should use keyword parameters to make
+                # it clear how you are calling it.  Any argument can be a keyword, not just
+                # arguments that give defaults.  Especially an argument like "True" is not
+                # self-explanatory.
                 self.evaluateSingleIfConditionalDoException( os.path.dirname(mappedpath), urlparentpath, environ, start_response, True)
 
         if os.path.exists(mappedpath) or self._lockmanager.isURLLocked(displaypath) != None:
             self.evaluateSingleIfConditionalDoException( mappedpath, displaypath, environ, start_response, True)
         self.evaluateSingleHTTPConditionalsDoException( mappedpath, displaypath, environ, start_response)
 
+        # @@: Why is this commented out?
 #      websupportfuncs.evaluateHTTPConditionals(lastmodified, entitytag, environ, isnewfile)   
 
         ## Test for unsupported stuff
@@ -227,13 +258,18 @@ class RequestServer(object):
                 readbuffer = inputstream.read(next_buffer_read_size)
                 if len(readbuffer) != 0:
                     contentlengthremaining = contentlengthremaining - len(readbuffer)
-                    fileobj.write(readbuffer)         
+                    fileobj.write(readbuffer)
+                    # @@: Why the flush?  This effects speed of writes considerably.
                     fileobj.flush()         
 
             fileobj.close()
             self._lockmanager.checkLocksToAdd(displaypath)
 
         except:
+            # @@: You should give some indication to the user of what happened.
+            # Generally I think the exception should just be allowed to raise, and somewhere
+            # higher up you should translate that into Internal Error and log the error.
+            # Catching exceptions like this is dangerous.
             raise HTTPRequestException(processrequesterrorhandler.HTTP_INTERNAL_ERROR) 
 
         if isnewfile:
@@ -248,6 +284,7 @@ class RequestServer(object):
     def doOPTIONS(self, environ, start_response):
         mappedpath = environ['pyfileserver.mappedpath']
         if os.path.isdir(mappedpath):
+            # That Allow header seems like it should be a constant somewhere.
             start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET DELETE PROPFIND PROPPATCH COPY MOVE LOCK UNLOCK'), ('DAV','1,2'), ('Date',httpdatehelper.getstrftime())])      
         elif os.path.isfile(mappedpath):
             start_response('200 OK', [('Content-Type', 'text/html'), ('Content-Length','0'), ('Allow','OPTIONS HEAD GET PUT DELETE PROPFIND PROPPATCH COPY MOVE LOCK UNLOCK'), ('DAV','1,2'), ('Allow-Ranges','bytes'), ('Date',httpdatehelper.getstrftime())])            
@@ -276,10 +313,16 @@ class RequestServer(object):
         self.evaluateSingleIfConditionalDoException( mappedpath, displaypath, environ, start_response)
         self.evaluateSingleHTTPConditionalsDoException( mappedpath, displaypath, environ, start_response)
 
+        # @@: This should be:
+        # trailer = environ.get('pyfileserver.trailer', '')
         trailer = ''
         if 'pyfileserver.trailer' in environ:
             trailer = environ['pyfileserver.trailer']
 
+        # @@: String concatenation like this can be slow.  It is better to use
+        # the standard library's cStringIO.StringIO object (a fake file object)
+        # or a list of strings that you join with ''.join(string_list) when you
+        # are finished.  I find that using StringIO reads better as well.
         proc_response = ''
         proc_response = proc_response + ('<html><head><title>PyFileServer - Index of ' + displaypath + '</title>')
 
@@ -336,6 +379,7 @@ class RequestServer(object):
 
 
         statresults = os.stat(mappedpath)
+        # @@: You can also use statresults.st_mode:
         mode = statresults[stat.ST_MODE]   
         filesize = statresults[stat.ST_SIZE]
         lastmodified = statresults[stat.ST_MTIME]
@@ -383,6 +427,7 @@ class RequestServer(object):
         responseHeaders.append(('Last-Modified', httpdatehelper.getstrftime(lastmodified)))
         responseHeaders.append(('Content-Type', mimetype))
         responseHeaders.append(('Date', httpdatehelper.getstrftime()))
+        # @@: I'd do '"%s"' % entitytag -- that's easier to read:
         responseHeaders.append(('ETag', '\"' + entitytag + '\"'))
         if ispartialranges:
             responseHeaders.append(('Content-Ranges', 'bytes ' + str(rangestart) + '-' + str(rangeend) + '/' + rangelength))
@@ -402,6 +447,14 @@ class RequestServer(object):
         fileobj.seek(rangestart)
 
         #read until EOF or contentlengthremaining = 0
+        # @@: This is much more complicated than necessary.  You can do it like:
+        # remainingbytes = rangelength
+        # while 1:
+        #     text = fileobj.read(min(remainingbytes, BUFFER_SIZE))
+        #     remainingbytes -= len(text)
+        #     yield text
+        #     if not text or not remainingbytes:
+        #         break
         contentlengthremaining = rangelength
         readbuffer = 'start'
         while len(readbuffer) != 0 and contentlengthremaining != 0:
@@ -429,6 +482,9 @@ class RequestServer(object):
         mappedpath = environ['pyfileserver.mappedpath']
         displaypath =  environ['pyfileserver.mappedURI']
 
+        # You should never use "!= None", always "is not None".  Also in this case, it seems
+        # like isURLLocked is returning a boolean, so you shouldn't compare it to anything
+        # (right now if isURLLocked returned False you'd treat it as True)
         if os.path.exists(mappedpath) or self._lockmanager.isURLLocked(displaypath) != None:
             self.evaluateSingleIfConditionalDoException( mappedpath, displaypath, environ, start_response, True)
         self.evaluateSingleHTTPConditionalsDoException( mappedpath, displaypath, environ, start_response)
@@ -443,13 +499,19 @@ class RequestServer(object):
             self.evaluateSingleIfConditionalDoException( parentdir, urlparentpath, environ, start_response, True)
 
 
-
+        # @@: This should give an error messages about why the conflict occurred:
         if not os.path.isdir(parentdir):
             raise HTTPRequestException(processrequesterrorhandler.HTTP_CONFLICT)          
         try:   
             os.mkdir(mappedpath)
             self._lockmanager.checkLocksToAdd(displaypath)
         except Exception:
+            # @@: This is definitely incorrect, as the 201 or 200 response may not be
+            # valid if you catch an exception here.  You shouldn't catch any exception
+            # here, unless you translate known OS exception to specific HTTP responses.
+            # But even if you don't do that, it's better to let the exception go and
+            # produce an Internal Server Error than to catch it and cover up that an
+            # error occurred.
             pass
         if os.path.exists(mappedpath):
             start_response("201 Created", [('Content-Length',0)])
@@ -465,6 +527,10 @@ class RequestServer(object):
         if not os.path.exists(mappedpath):
             raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND)         
 
+        # @@: Setting the header like this is a little odd.  I'm not sure what
+        # to make of it; it makes the environment inaccurate, because it adds
+        # headers that weren't actually sent.  And it doesn't seem important,
+        # because often it gets set and then not used from what I can tell.
         if os.path.isdir(mappedpath): #delete over collection
             environ['HTTP_DEPTH'] = 'infinity'
         else:
@@ -474,7 +540,12 @@ class RequestServer(object):
 
         dictError = dict([]) #errors in deletion
         dictHidden = dict([]) #hidden errors, ancestors of failed deletes
-        for (filepath, filedisplaypath) in actionList:         
+        for (filepath, filedisplaypath) in actionList:
+            # @@: To avoid a little indentation I'd do:
+            # if filepath in dictHidden:
+            #     dictHidden[os.path.dirname(filepath)] = ''
+            #     continue
+            # try: ...
             if filepath not in dictHidden:
                 try:
 
@@ -486,6 +557,7 @@ class RequestServer(object):
                     self.evaluateSingleHTTPConditionalsDoException( filepath, filedisplaypath, environ, start_response)
 
                     if os.path.isdir(filepath):
+                        # @@: Are delete's recursive?
                         os.rmdir(filepath)
                     else:
                         os.unlink(filepath)
@@ -495,6 +567,8 @@ class RequestServer(object):
                     dictError[filedisplaypath] = processrequesterrorhandler.interpretErrorException(e)
                     dictHidden[os.path.dirname(filepath)] = ''
                 except Exception:
+                    # @@: Well, this certainly isn't right.  At least you have to keep
+                    # track of the failures, preferably sending a proper HTTP response.
                     pass
                 if os.path.exists(filepath) and filedisplaypath not in dictError:
                     dictError[filedisplaypath] = '500 Internal Server Error'
@@ -528,12 +602,26 @@ class RequestServer(object):
 
         contentlengthtoread = 0
         if 'CONTENT_LENGTH' in environ:
+            # isdigit() only tests the first character.  Better to do:
+            # try:
+            #     contentlengthtoread = long(environ.get('CONTENT_LENGTH', 0))
+            # except ValueError: # This gets raised when something invalid is given
+            #     contentlengthtoread = 0 # or return Bad Request
             if environ['CONTENT_LENGTH'].isdigit():
                 contentlengthtoread = long(environ['CONTENT_LENGTH'])
 
         requestbody = ''
+        # @@: wsgi.input is always in environ; it's against the WSGI spec if not.
         if 'wsgi.input' in environ and contentlengthtoread > 0:
-            inputstream = environ['wsgi.input']  
+            inputstream = environ['wsgi.input']
+            # @@: This loop needn't exist; since you are just collecting everything
+            # into a string you can do:
+            #   requestbody = inputstream.read(contentlengthtoread)
+            # the only point of a loop in these cases is so that you don't read
+            # the entire string into memory (processing it chunk by chunk, like when
+            # sending a large file).  Since you are reading the whole request body
+            # (not a problem here) it's not necessary
+
             readsize = BUF_SIZE
             if contentlengthtoread < BUF_SIZE:
                 readsize = contentlengthtoread    
@@ -551,13 +639,23 @@ class RequestServer(object):
         try:
             doc = Sax2.Reader().fromString(requestbody)
         except Exception:
+            # @@: Again, an explanation should be given, like:
+            # except Exception, e:
+            #     raise HTTPRequestException(processrequesterrorhandler.HTTP_BAD_REQUEST,
+            #                                'Error processing XML: %s' % e)
             raise HTTPRequestException(processrequesterrorhandler.HTTP_BAD_REQUEST)   
         pproot = doc.documentElement
         if pproot.namespaceURI != 'DAV:' or pproot.localName != 'propertyupdate':
             raise HTTPRequestException(processrequesterrorhandler.HTTP_BAD_REQUEST)   
 
         propupdatelist = []
+        # @@: This loop is clearly nested too deeply.  Use of break and continue would
+        # help a lot
         for ppnode in pproot.childNodes:
+            # @@: Instead:
+            # if ppnode.namespaceURI != 'DAV:' or ppnode.localName not in ('remove', 'set'):
+            #     continue
+            # and so forth
             if ppnode.namespaceURI == 'DAV:' and (ppnode.localName == 'remove' or ppnode.localName == 'set'):
                 for propnode in ppnode.childNodes:
                     if propnode.namespaceURI == 'DAV:' and propnode.localName == 'prop':
@@ -635,8 +733,10 @@ class RequestServer(object):
 
     # does not yet support If and If HTTP Conditions   
     def doPROPFIND(self, environ, start_response):
+        # @@: you can do environ.setdefault('HTTP_DEPTH', '0') instead:
         if 'HTTP_DEPTH' not in environ:
             environ['HTTP_DEPTH'] = '0'
+            
         mappedpath = environ['pyfileserver.mappedpath']
         displaypath =  environ['pyfileserver.mappedURI']
 
@@ -692,6 +792,9 @@ class RequestServer(object):
                 for pfpnode in pfpList:
                     if pfpnode.nodeType == xml.dom.Node.ELEMENT_NODE:
                         verifyns = pfpnode.namespaceURI
+                        # Should by "if verifyns is None:"; "== None works", but
+                        # "is None" is better form.  There's only ever one None object,
+                        # so testing identity is proper
                         if verifyns == None:
                             verifyns = ''
                         propList.append( (verifyns, pfpnode.localName) )       
@@ -777,6 +880,9 @@ class RequestServer(object):
 
         destexists = os.path.exists(destpath)
 
+        # @@: Thinking back to my comments on dispatching, it would in many ways make
+        # this worse.  Unless, however, you turned a copy across realms into a PUT
+        # (reusing the credentials you have).
         if mappedrealm != destrealm:
             #inter-realm copying not supported, since its not possible to authentication-wise
             raise HTTPRequestException(processrequesterrorhandler.HTTP_BAD_REQUEST)
@@ -790,6 +896,7 @@ class RequestServer(object):
         if 'HTTP_OVERWRITE' not in environ:
             environ['HTTP_OVERWRITE'] = 'T'
 
+        # @@: This is a complex and highly nested loop; it should be refactored somehow
         dictError = dict([])
         dictHidden = dict([])        
         for cpidx in range(0, len(ressrclist)):
@@ -815,6 +922,7 @@ class RequestServer(object):
                     if environ['HTTP_OVERWRITE'] == 'F':
                         if os.path.exists(destfilepath):
                             raise HTTPRequestException(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
+                    # @@: This should be elif:, not else:if:
                     else: #Overwrite = T
                         if os.path.exists(destfilepath):
                             actionList = websupportfuncs.getDepthActionList(destfilepath, destfiledisplaypath, 'infinity', False)
@@ -908,9 +1016,11 @@ class RequestServer(object):
         if 'HTTP_OVERWRITE' not in environ:
             environ['HTTP_OVERWRITE'] = 'T'
 
+        # @@: dict([]) is just a long way to say {}
         dictError = dict([])
         dictHidden = dict([])        
         dictDoNotDel = dict([])
+        # @@: Against, this should be refactored to be shorter and less deeply nested
         for cpidx in range(0, len(ressrclist)):
             (filepath, filedisplaypath) = ressrclist[cpidx]     
             (destfilepath, destfiledisplaypath) = resdestlist[cpidx]     
@@ -1084,6 +1194,7 @@ class RequestServer(object):
             lockowner = ''
             lockdepth = environ['HTTP_DEPTH']
 
+            # @@: Another loop that should be simplified
             for linode in liroot.childNodes:
                 if linode.namespaceURI == 'DAV:' and linode.localName == 'lockscope':
                     for lsnode in linode.childNodes:
@@ -1207,9 +1318,12 @@ class RequestServer(object):
 
 
 
+    # @@: Style guide is that keyword arguments should not have spaces around the =, so
+    # it should be "checkLock=False"
     def evaluateSingleIfConditionalDoException(self, mappedpath, displaypath, environ, start_response, checkLock = False):
         if 'HTTP_IF' not in environ:
             if checkLock:
+                #@@: is not None, or simply the implicit test for truth/falsehood
                 if self._lockmanager.isURLLocked(displaypath) != None:
                     raise HTTPRequestException(processrequesterrorhandler.HTTP_LOCKED)            
             return
