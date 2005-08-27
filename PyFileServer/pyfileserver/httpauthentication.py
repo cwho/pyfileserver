@@ -110,7 +110,7 @@ import re
 
 class SimpleDomainController(object):
     def __init__(self, dictusers = None, realmname = 'SimpleDomain'):
-        if dictusers == None:
+        if dictusers is None:
             self._users = dict({'John Smith': 'YouNeverGuessMe'})
         else:
             self._users = dictusers
@@ -144,8 +144,9 @@ class HTTPAuthenticator(object):
         self._domaincontroller = domaincontroller
         self._application = application
         self._noncedict = dict([])
-        self._headerparser = re.compile("([\w]+)=([^,]*),")
-        self._headermethod = re.compile("^([\w]+)")
+
+        self._headerparser = re.compile(r"([\w]+)=([^,]*),")
+        self._headermethod = re.compile(r"^([\w]+)")
         
         self._acceptbasic = acceptbasic
         self._acceptdigest = acceptdigest
@@ -177,15 +178,13 @@ class HTTPAuthenticator(object):
             else:
                 return self.sendBasicAuthResponse(environ, start_response)
 
-        #should not get here, failsafe response
-        start_response("400 Bad Request", [('Content-Length', 0)])
         return ['']        
 
     def sendBasicAuthResponse(self, environ, start_response):
         realmname = self._domaincontroller.getDomainRealm(environ['PATH_INFO'] , environ)
         wwwauthheaders = "Basic realm=\"" + realmname + "\"" 
         start_response("401 Not Authorized", [('WWW-Authenticate', wwwauthheaders)])
-        return ['']
+        return [self.getErrorMessage()]
 
     def authBasicAuthRequest(self, environ, start_response):
         realmname = self._domaincontroller.getDomainRealm(environ['PATH_INFO'] , environ)
@@ -206,9 +205,7 @@ class HTTPAuthenticator(object):
             return self.sendBasicAuthResponse(environ, start_response)
         
     def sendDigestAuthResponse(self, environ, start_response):    
-
         realmname = self._domaincontroller.getDomainRealm(environ['PATH_INFO'] , environ)
-
         random.seed()
         serverkey = hex(random.getrandbits(32))[2:]
         etagkey = md5.new(environ['PATH_INFO']).hexdigest()
@@ -216,17 +213,14 @@ class HTTPAuthenticator(object):
         nonce = base64.b64encode(timekey + md5.new(timekey + ":" + etagkey + ":" + serverkey).hexdigest())
         wwwauthheaders = "Digest realm=\"" + realmname + "\", nonce=\"" + nonce + \
             "\", algorithm=\"MD5\", qop=\"auth\""                 
-        responseHeaders = []
-        responseHeaders.append(('WWW-Authenticate', wwwauthheaders))
-        start_response("401 Not Authorized", responseHeaders)
-        return ['']
+        start_response("401 Not Authorized", [('WWW-Authenticate', wwwauthheaders)])
+        return [self.getErrorMessage()]
         
     def authDigestAuthRequest(self, environ, start_response):  
 
         realmname = self._domaincontroller.getDomainRealm(environ['PATH_INFO'] , environ)
         
         isinvalidreq = False
-        httpallowed = True
          
         authheaderdict = dict([])
         authheaders = environ['HTTP_AUTHORIZATION'] + ','
@@ -241,7 +235,7 @@ class HTTPAuthenticator(object):
         if 'username' in authheaderdict:
             req_username = authheaderdict['username']
             if not self._domaincontroller.isRealmUser(realmname, req_username, environ):   
-                httpallowed = False
+                isinvalidreq = True
         else:
             isinvalidreq = True
 
@@ -290,21 +284,16 @@ class HTTPAuthenticator(object):
             req_response = authheaderdict['response']
         else:
             isinvalidreq = True
-
-        if isinvalidreq:
-            httpallowed = False
-#            start_response("400 Bad Request", [('Content-Length', 0)])
-#            return ['']
              
-        if httpallowed:
+        if not isinvalidreq:
             req_password = self._domaincontroller.getRealmUserPassword(realmname, req_username, environ)
             req_method = environ['REQUEST_METHOD']
              
             required_digest = self.computeDigestResponse(req_username, realmname, req_password, req_method, req_uri, req_nonce, req_cnonce, req_qop, req_nc)
             if required_digest != req_response:
-                httpallowed = False
+                isinvalidreq = True
 
-        if httpallowed:
+        if not isinvalidreq:
             environ['httpauthentication.realm'] = realmname
             environ['httpauthentication.username'] = req_username
             return self._application(environ, start_response)                
@@ -325,3 +314,13 @@ class HTTPAuthenticator(object):
         
     def md5kd(self, secret, data):
         return self.md5h(secret + ':' + data)
+
+    def getErrorMessage(self):
+        message = """\
+<html><head><title>401 Access not authorized</title></head>
+<body>
+<h1>401 Access not authorized</h1>
+</body>        
+</html>        
+        """
+        return message

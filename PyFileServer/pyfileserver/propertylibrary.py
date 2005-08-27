@@ -64,10 +64,21 @@ This module is specific to the PyFileServer application.
 
 """
 
+
+#
+#RR: Lots of review comments here - this is waiting for a bigger refactor
+#
+
+#@@: Use of shelve means this is only really useful in a threaded environment.
+#    And if you have just a single-process threaded environment, you could get
+#    nearly the same effect with a dictionary of threading.Lock() objects.  Of course,
+#    it would be better to move off shelve anyway, probably to a system with
+#    a directory of per-file locks, using the file locking primitives (which,
+#    sadly, are not quite portable).
+
 __docformat__ = 'reStructuredText'
 
 import os
-import os.path
 import shelve
 import threading
 import stat
@@ -78,6 +89,8 @@ import time
 
 import httpdatehelper
 import websupportfuncs
+from processrequesterrorhandler import HTTPRequestException
+import processrequesterrorhandler
 
 """
 A low performance lock library using shelve
@@ -91,268 +104,268 @@ TODO possibilities:
 LOCK_TIME_OUT_DEFAULT = 604800 # 1 week, in seconds
 
 class LockManager(object):
-   def __init__(self, persiststore):
-      self._loaded = False      
-      self._dict = None
-      self._init_lock = threading.RLock()
-      self._write_lock = threading.RLock()
-      self._persiststorepath = persiststore
+    def __init__(self, persiststore):
+        self._loaded = False      
+        self._dict = None
+        self._init_lock = threading.RLock()
+        self._write_lock = threading.RLock()
+        self._persiststorepath = persiststore
 
-   def performInitialization(self):
-      self._init_lock.acquire(True)
-      try:
-         if self._loaded:       # test again within the critical section
-            self._lock.release()
-            return True
-         self._dict = shelve.open(self._persiststorepath)
-      finally:
-         self._init_lock.release()         
+    def performInitialization(self):
+        self._init_lock.acquire(True)
+        try:
+            if self._loaded:       # test again within the critical section
+                self._lock.release()
+                return True
+            self._dict = shelve.open(self._persiststorepath)
+        finally:
+            self._init_lock.release()         
 
-   def __repr__(self):
-      return repr(self._dict)
-   
-   def __del__(self):
-      if self._loaded:
-         self._dict.close()   
+    def __repr__(self):
+        return repr(self._dict)
 
-   def generateLock(self, username, locktype = 'write', lockscope = 'exclusive', lockdepth = 'infinite', lockowner = '', lockheadurl = '', timeout = LOCK_TIME_OUT_DEFAULT):
-      self._write_lock.acquire(True)
-      try:
-         if not self._loaded:
-            self.performInitialization()
-         randtoken = "opaquelocktoken:" + str(hex(random.getrandbits(256)))
-         while ('LOCKTIME:'+ randtoken) in self._dict:
+    def __del__(self):
+        if self._loaded:
+            self._dict.close()   
+
+    def generateLock(self, username, locktype = 'write', lockscope = 'exclusive', lockdepth = 'infinite', lockowner = '', lockheadurl = '', timeout = LOCK_TIME_OUT_DEFAULT):
+        self._write_lock.acquire(True)
+        try:
+            if not self._loaded:
+                self.performInitialization()
             randtoken = "opaquelocktoken:" + str(hex(random.getrandbits(256)))
-         if timeout < 0:
-            self._dict['LOCKTIME:'+ randtoken] = -1      
-         else:
-            self._dict['LOCKTIME:'+ randtoken] = time.time() + timeout
-         self._dict['LOCKUSER:'+ randtoken] = username
-         self._dict['LOCKTYPE:'+ randtoken] = locktype
-         self._dict['LOCKSCOPE:'+ randtoken] = lockscope
-         self._dict['LOCKDEPTH:'+ randtoken] = lockdepth
-         self._dict['LOCKOWNER:'+randtoken] = lockowner
-         self._dict['LOCKHEADURL:'+randtoken] = lockheadurl
-         return randtoken
-      finally:
-         self._dict.sync()
-         self._write_lock.release()
+            while ('LOCKTIME:'+ randtoken) in self._dict:
+                randtoken = "opaquelocktoken:" + str(hex(random.getrandbits(256)))
+            if timeout < 0:
+                self._dict['LOCKTIME:'+ randtoken] = -1      
+            else:
+                self._dict['LOCKTIME:'+ randtoken] = time.time() + timeout
+            self._dict['LOCKUSER:'+ randtoken] = username
+            self._dict['LOCKTYPE:'+ randtoken] = locktype
+            self._dict['LOCKSCOPE:'+ randtoken] = lockscope
+            self._dict['LOCKDEPTH:'+ randtoken] = lockdepth
+            self._dict['LOCKOWNER:'+randtoken] = lockowner
+            self._dict['LOCKHEADURL:'+randtoken] = lockheadurl
+            return randtoken
+        finally:
+            self._dict.sync()
+            self._write_lock.release()
 
-   def validateLock(self, locktoken):
-      if not self._loaded:
-         self.performInitialization()
-      if ('LOCKTIME:'+ locktoken) in self._dict:
-         if self._dict['LOCKTIME:'+ locktoken] > 0 and self._dict['LOCKTIME:'+ locktoken] < time.time():
-            self.deleteLock(locktoken)   
+    def validateLock(self, locktoken):
+        if not self._loaded:
+            self.performInitialization()
+        if ('LOCKTIME:'+ locktoken) in self._dict:
+            if self._dict['LOCKTIME:'+ locktoken] > 0 and self._dict['LOCKTIME:'+ locktoken] < time.time():
+                self.deleteLock(locktoken)   
+                return False
+        else:
+            self.deleteLock(locktoken)      
             return False
-      else:
-         self.deleteLock(locktoken)      
-         return False
-      return True
+        return True
 
-   def deleteLock(self, locktoken):
-      self._write_lock.acquire(True)      
-      try:
-         if not self._loaded:
+    def deleteLock(self, locktoken):
+        self._write_lock.acquire(True)      
+        try:
+            if not self._loaded:
+                self.performInitialization()
+            if ('LOCKTIME:'+ locktoken) in self._dict:
+                del self._dict['LOCKTIME:'+ locktoken]       
+            if ('LOCKUSER:'+ locktoken) in self._dict:
+                del self._dict['LOCKUSER:'+ locktoken]       
+            if ('LOCKTYPE:'+ locktoken) in self._dict:
+                del self._dict['LOCKTYPE:'+ locktoken]
+            if ('LOCKSCOPE:'+ locktoken) in self._dict:
+                del self._dict['LOCKSCOPE:'+ locktoken]
+            if ('LOCKDEPTH:'+ locktoken) in self._dict:
+                del self._dict['LOCKDEPTH:'+ locktoken]
+            if ('LOCKOWNER:'+ locktoken) in self._dict:
+                del self._dict['LOCKOWNER:'+ locktoken]
+            if ('LOCKHEADURL:'+ locktoken) in self._dict:
+                del self._dict['LOCKHEADURL:'+ locktoken]
+            if ('LOCKURLS:'+locktoken) in self._dict:       
+                for urllocked in self._dict['LOCKURLS:'+locktoken]:
+                    if ('URLLOCK:' + urllocked) in self._dict:
+                        urllockdict = self._dict['URLLOCK:' + urllocked]
+                        if locktoken in urllockdict:
+                            del urllockdict[locktoken]
+                        if len(urllockdict) == 0:
+                            del self._dict['URLLOCK:' + urllocked]
+                        else:
+                            self._dict['URLLOCK:' + urllocked] = urllockdict 
+                del self._dict['LOCKURLS:'+locktoken]  
+        finally:
+            self._dict.sync()
+            self._write_lock.release()
+
+    def isTokenLockedByUser(self, locktoken, username):
+        if not self._loaded:
             self.performInitialization()
-         if ('LOCKTIME:'+ locktoken) in self._dict:
-            del self._dict['LOCKTIME:'+ locktoken]       
-         if ('LOCKUSER:'+ locktoken) in self._dict:
-            del self._dict['LOCKUSER:'+ locktoken]       
-         if ('LOCKTYPE:'+ locktoken) in self._dict:
-            del self._dict['LOCKTYPE:'+ locktoken]
-         if ('LOCKSCOPE:'+ locktoken) in self._dict:
-            del self._dict['LOCKSCOPE:'+ locktoken]
-         if ('LOCKDEPTH:'+ locktoken) in self._dict:
-            del self._dict['LOCKDEPTH:'+ locktoken]
-         if ('LOCKOWNER:'+ locktoken) in self._dict:
-            del self._dict['LOCKOWNER:'+ locktoken]
-         if ('LOCKHEADURL:'+ locktoken) in self._dict:
-            del self._dict['LOCKHEADURL:'+ locktoken]
-         if ('LOCKURLS:'+locktoken) in self._dict:       
-            for urllocked in self._dict['LOCKURLS:'+locktoken]:
-               if ('URLLOCK:' + urllocked) in self._dict:
-                  urllockdict = self._dict['URLLOCK:' + urllocked]
-                  if locktoken in urllockdict:
-                     del urllockdict[locktoken]
-                  if len(urllockdict) == 0:
-                     del self._dict['URLLOCK:' + urllocked]
-                  else:
-                     self._dict['URLLOCK:' + urllocked] = urllockdict 
-            del self._dict['LOCKURLS:'+locktoken]  
-      finally:
-         self._dict.sync()
-         self._write_lock.release()
-
-   def isTokenLockedByUser(self, locktoken, username):
-      if not self._loaded:
-         self.performInitialization()
-      if self.validateLock(locktoken):
-         return ('LOCKUSER:'+locktoken) in self._dict      
-      else:
-         return False
-   
-   def isURLLocked(self, url):
-      if not self._loaded:
-         self.performInitialization()
-      if ('URLLOCK:' + url) in self._dict:
-         urllockdictcopy = self._dict['URLLOCK:' + url].copy()  # use read-only copy here, since validation can delete the dictionary
-         for urllocktoken in urllockdictcopy:
-            if self.validateLock(urllocktoken):
-               if ('LOCKSCOPE:'+ urllocktoken) in self._dict: # either one exclusive lock, or many shared locks - first lock will give lock scope
-                  return self._dict['LOCKSCOPE:'+ urllocktoken]
-               return "unknown" # not usually reached
-         return None
-      else:
-         return None
-   
-   # lockproperty one of 'LOCKSCOPE', 'LOCKUSER', 'LOCKTYPE', 'LOCKDEPTH', 'LOCKTIME', 'LOCKOWNER' note case
-   def getLockProperty(self, locktoken, lockproperty):
-      if (lockproperty + ":" + locktoken) in self._dict: 
-         lockpropvalue = self._dict[lockproperty + ":" + locktoken]         
-         if lockproperty == 'LOCKTIME':
-            if lockpropvalue < 0:
-               return 'Infinite'
-            else:
-               return 'Second-' + str(long(lockpropvalue - time.time())) 
-         return lockpropvalue
-      else:
-         return ''
-         
-   def isURLLockedByToken(self, url, locktoken):   
-      if not self._loaded:
-         self.performInitialization()
-      if ('URLLOCK:' + url) in self._dict:
-         urllockdictcopy = self._dict['URLLOCK:' + url].copy()  # use read-only copy here, since validation can delete the dictionary
-         for urllocktoken in urllockdictcopy:
-            if self.validateLock(urllocktoken) and urllocktoken == locktoken:
-               return True
-         return False
-      else:
-         return False
-   
-   def getURLLocktokenList(self, url):
-      listReturn = []
-      if not self._loaded:
-         self.performInitialization()
-      if ('URLLOCK:' + url) in self._dict:
-         urllockdictcopy = self._dict['URLLOCK:' + url].copy()  # use read-only copy here, since validation can delete the dictionary
-         for urllocktoken in urllockdictcopy:
-            if self.validateLock(urllocktoken):
-               listReturn.append(urllocktoken)
-      return listReturn
-
-   def getURLLocktokenListOfUser(self, url, username):
-      listReturn = []
-      if not self._loaded:
-         self.performInitialization()
-      if ('URLLOCK:' + url) in self._dict:
-         urllockdictcopy = self._dict['URLLOCK:' + url].copy()  # use read-only copy here, since validation can delete the dictionary
-         for urllocktoken in urllockdictcopy:
-            if self.isTokenLockedByUser(urllocktoken, username):
-               listReturn.append(urllocktoken)
-      return listReturn
-
-      
-   def addURLToLock(self, url, locktoken):
-      self._write_lock.acquire(True)
-      try:
-         if not self._loaded:
-            self.performInitialization()
-         if self.validateLock(locktoken):            
-            if ('URLLOCK:' + url) in self._dict:
-               urllockdict = self._dict['URLLOCK:' + url]      
-               urllockdict[locktoken] = locktoken
-               self._dict['URLLOCK:' + url] = urllockdict
-            else:
-               self._dict['URLLOCK:' + url] = dict([(locktoken ,locktoken )])
-
-            if ('LOCKURLS:'+locktoken) in self._dict:  
-               urllockdict = self._dict['LOCKURLS:'+locktoken]
-               urllockdict[url] = url
-               self._dict['LOCKURLS:'+locktoken] = urllockdict
-            else:
-               self._dict['LOCKURLS:'+locktoken] = dict([(url, url)])
-            return True
-         else:
+        if self.validateLock(locktoken):
+            return ('LOCKUSER:'+locktoken) in self._dict      
+        else:
             return False
-      finally:
-         self._dict.sync()
-         self._write_lock.release()               
-      
-   def removeAllLocksFromURL(self, url):
-      self._write_lock.acquire(True)
-      try:
-         if not self._loaded:
+
+    def isURLLocked(self, url):
+        if not self._loaded:
             self.performInitialization()
-         if ('URLLOCK:' + url) in self._dict:
+        if ('URLLOCK:' + url) in self._dict:
             urllockdictcopy = self._dict['URLLOCK:' + url].copy()  # use read-only copy here, since validation can delete the dictionary
             for urllocktoken in urllockdictcopy:
-               if self.validateLock(urllocktoken):
-                  if ('LOCKURLS:'+locktoken) in self._dict:       
-                     urllockdict = self._dict['LOCKURLS:'+locktoken]
-                     if url in urllockdict:
-                        del urllockdict[url]
-                        if len(urllockdict) == 0:
-                           self.deleteLock(locktoken)
-                        else:                
-                           self._dict['LOCKURLS:'+locktoken] = urllockdict
-            if ('URLLOCK:' + url) in self._dict:  # check again, deleteLock might have removed it
-               del self._dict['URLLOCK:' + url]      
-      finally:
-         self._dict.sync()
-         self._write_lock.release()               
-      
-   def refreshLock(self, locktoken, timeout = LOCK_TIME_OUT_DEFAULT):
-      self._write_lock.acquire(True)
-      try:
-         if not self._loaded:
-            self.performInitialization()
-         if ('LOCK:'+ locktoken) in self._dict:
-            self._dict['LOCK:'+ locktoken] = time.time() + timeout
-            return True
-         return False
-      finally:
-         self._dict.sync()
-         self._write_lock.release()
+                if self.validateLock(urllocktoken):
+                    if ('LOCKSCOPE:'+ urllocktoken) in self._dict: # either one exclusive lock, or many shared locks - first lock will give lock scope
+                        return self._dict['LOCKSCOPE:'+ urllocktoken]
+                    return "unknown" # not usually reached
+            return None
+        else:
+            return None
 
-   def checkLocksToAdd(self, displaypath):
-      if not self._loaded:
-         self.performInitialization()
-      parentdisplaypath = websupportfuncs.getLevelUpURL(displaypath)
-      if self.isURLLocked(parentdisplaypath) != None:
-         locklist = self.getURLLocktokenList(parentdisplaypath)
-         for locklisttoken in locklist:
-            if self.getLockProperty(locklisttoken, 'LOCKDEPTH') == 'infinity':
-               if not self.isURLLockedByToken(displaypath, locklisttoken):
-                  self.addURLToLock(displaypath, locklisttoken)
+    # lockproperty one of 'LOCKSCOPE', 'LOCKUSER', 'LOCKTYPE', 'LOCKDEPTH', 'LOCKTIME', 'LOCKOWNER' note case
+    def getLockProperty(self, locktoken, lockproperty):
+        if (lockproperty + ":" + locktoken) in self._dict: 
+            lockpropvalue = self._dict[lockproperty + ":" + locktoken]         
+            if lockproperty == 'LOCKTIME':
+                if lockpropvalue < 0:
+                    return 'Infinite'
+                else:
+                    return 'Second-' + str(long(lockpropvalue - time.time())) 
+            return lockpropvalue
+        else:
+            return ''
+
+    def isURLLockedByToken(self, url, locktoken):   
+        if not self._loaded:
+            self.performInitialization()
+        if ('URLLOCK:' + url) in self._dict:
+            urllockdictcopy = self._dict['URLLOCK:' + url].copy()  # use read-only copy here, since validation can delete the dictionary
+            for urllocktoken in urllockdictcopy:
+                if self.validateLock(urllocktoken) and urllocktoken == locktoken:
+                    return True
+            return False
+        else:
+            return False
+
+    def getURLLocktokenList(self, url):
+        listReturn = []
+        if not self._loaded:
+            self.performInitialization()
+        if ('URLLOCK:' + url) in self._dict:
+            urllockdictcopy = self._dict['URLLOCK:' + url].copy()  # use read-only copy here, since validation can delete the dictionary
+            for urllocktoken in urllockdictcopy:
+                if self.validateLock(urllocktoken):
+                    listReturn.append(urllocktoken)
+        return listReturn
+
+    def getURLLocktokenListOfUser(self, url, username):
+        listReturn = []
+        if not self._loaded:
+            self.performInitialization()
+        if ('URLLOCK:' + url) in self._dict:
+            urllockdictcopy = self._dict['URLLOCK:' + url].copy()  # use read-only copy here, since validation can delete the dictionary
+            for urllocktoken in urllockdictcopy:
+                if self.isTokenLockedByUser(urllocktoken, username):
+                    listReturn.append(urllocktoken)
+        return listReturn
+
+
+    def addURLToLock(self, url, locktoken):
+        self._write_lock.acquire(True)
+        try:
+            if not self._loaded:
+                self.performInitialization()
+            if self.validateLock(locktoken):            
+                if ('URLLOCK:' + url) in self._dict:
+                    urllockdict = self._dict['URLLOCK:' + url]      
+                    urllockdict[locktoken] = locktoken
+                    self._dict['URLLOCK:' + url] = urllockdict
+                else:
+                    self._dict['URLLOCK:' + url] = dict([(locktoken ,locktoken )])
+
+                if ('LOCKURLS:'+locktoken) in self._dict:  
+                    urllockdict = self._dict['LOCKURLS:'+locktoken]
+                    urllockdict[url] = url
+                    self._dict['LOCKURLS:'+locktoken] = urllockdict
+                else:
+                    self._dict['LOCKURLS:'+locktoken] = dict([(url, url)])
+                return True
+            else:
+                return False
+        finally:
+            self._dict.sync()
+            self._write_lock.release()               
+
+    def removeAllLocksFromURL(self, url):
+        self._write_lock.acquire(True)
+        try:
+            if not self._loaded:
+                self.performInitialization()
+            if ('URLLOCK:' + url) in self._dict:
+                urllockdictcopy = self._dict['URLLOCK:' + url].copy()  # use read-only copy here, since validation can delete the dictionary
+                for urllocktoken in urllockdictcopy:
+                    if self.validateLock(urllocktoken):
+                        if ('LOCKURLS:'+locktoken) in self._dict:       
+                            urllockdict = self._dict['LOCKURLS:'+locktoken]
+                            if url in urllockdict:
+                                del urllockdict[url]
+                                if len(urllockdict) == 0:
+                                    self.deleteLock(locktoken)
+                                else:                
+                                    self._dict['LOCKURLS:'+locktoken] = urllockdict
+                if ('URLLOCK:' + url) in self._dict:  # check again, deleteLock might have removed it
+                    del self._dict['URLLOCK:' + url]      
+        finally:
+            self._dict.sync()
+            self._write_lock.release()               
+
+    def refreshLock(self, locktoken, timeout = LOCK_TIME_OUT_DEFAULT):
+        self._write_lock.acquire(True)
+        try:
+            if not self._loaded:
+                self.performInitialization()
+            if ('LOCK:'+ locktoken) in self._dict:
+                self._dict['LOCK:'+ locktoken] = time.time() + timeout
+                return True
+            return False
+        finally:
+            self._dict.sync()
+            self._write_lock.release()
+
+    def checkLocksToAdd(self, displaypath):
+        if not self._loaded:
+            self.performInitialization()
+        parentdisplaypath = websupportfuncs.getLevelUpURL(displaypath)
+        if self.isURLLocked(parentdisplaypath) != None:
+            locklist = self.getURLLocktokenList(parentdisplaypath)
+            for locklisttoken in locklist:
+                if self.getLockProperty(locklisttoken, 'LOCKDEPTH') == 'infinity':
+                    if not self.isURLLockedByToken(displaypath, locklisttoken):
+                        self.addURLToLock(displaypath, locklisttoken)
 
 # returns -1 if infinite, else return numofsecs
 # any numofsecs above the following limit is regarded as infinite
 MAX_FINITE_TIMEOUT_LIMIT = 10*365*24*60*60  #approx 10 years
 #LOCK_TIME_OUT_DEFAULT = 604800 # 1 week, in seconds (copied from above)
 
-reSecondsReader = re.compile("[Ss][Ee][Cc][Oo][Nn][Dd]\\-([0-9]+)")
+reSecondsReader = re.compile(r'second\-([0-9]+)', re.I)
 
 def readTimeoutValueHeader(timeoutvalue):
-   timeoutsecs = 0
-   timeoutvaluelist = timeoutvalue.split(',')   
-   for timeoutspec in timeoutvaluelist:
-      timeoutspec = timeoutspec.strip()
-      if timeoutspec.lower() == 'infinite':
-         return -1
-      else:
-         listSR = reSecondsReader.findall(timeoutspec)
-         for secs in listSR:
-            timeoutsecs = long(secs)
-            if timeoutsecs > MAX_FINITE_TIMEOUT_LIMIT:
-               return -1          
-            if timeoutsecs != 0:
-               return timeoutsecs
-   return LOCK_TIME_OUT_DEFAULT
-   
+    timeoutsecs = 0
+    timeoutvaluelist = timeoutvalue.split(',')   
+    for timeoutspec in timeoutvaluelist:
+        timeoutspec = timeoutspec.strip()
+        if timeoutspec.lower() == 'infinite':
+            return -1
+        else:
+            listSR = reSecondsReader.findall(timeoutspec)
+            for secs in listSR:
+                timeoutsecs = long(secs)
+                if timeoutsecs > MAX_FINITE_TIMEOUT_LIMIT:
+                    return -1          
+                if timeoutsecs != 0:
+                    return timeoutsecs
+    return LOCK_TIME_OUT_DEFAULT
 
-   
+
+
 """
 A low performance dead properties library using shelve
 
@@ -362,205 +375,208 @@ TODO possibilities:
 + better resolution locks for higher performance
 """
 
+# @@: It would probably be easy to store the properties as pickle objects
+# in a parallel directory structure to the files you are describing.
+# Pickle is expedient, but later you could use something more readable
+# (pickles aren't particularly readable)
+
 class PropertyManager(object):
 
-   def __init__(self, persiststore):
-      self._loaded = False      
-      self._dict = None
-      self._init_lock = threading.RLock()
-      self._write_lock = threading.RLock()
-      self._persiststorepath = persiststore
-   
+    def __init__(self, persiststore):
+        self._loaded = False      
+        self._dict = None
+        self._init_lock = threading.RLock()
+        self._write_lock = threading.RLock()
+        self._persiststorepath = persiststore
 
-   def performInitialization(self):
-      self._init_lock.acquire(True)
-      try:
-         if self._loaded:       # test again within the critical section
-            self._lock.release()
-            return True
-         self._dict = shelve.open(self._persiststorepath)
-      finally:
-         self._init_lock.release()         
 
-   def getProperties(self, normurl):
-      if not self._loaded:
-         self.performInitialization()
-      if normurl in self._dict:
-         return self._dict[normurl].keys()
-      else:
-         return []
+    def performInitialization(self):
+        self._init_lock.acquire(True)
+        try:
+            if self._loaded:       # test again within the critical section
+                self._lock.release()
+                return True
+            self._dict = shelve.open(self._persiststorepath)
+        finally:
+            self._init_lock.release()         
 
-   def getProperty(self, normurl, propertyname):
-      if not self._loaded:
-         self.performInitialization()
-      if normurl not in self._dict:
-         return None
-      resourceprops = self._dict[normurl]
-      if propertyname not in resourceprops:
-         return None
-      else:
-         return resourceprops[propertyname]
-      
-   def writeProperty(self, normurl, propertyname, propertyvalue):
-      self._write_lock.acquire(True)
-      try:
-         if not self._loaded:
+    def getProperties(self, normurl):
+        if not self._loaded:
             self.performInitialization()
-         if normurl in self._dict:
-            locatordict = self._dict[normurl] 
-         else:
-            locatordict = dict([])    
-         locatordict[propertyname] = propertyvalue
-         self._dict[normurl] = locatordict
-         self._dict.sync()
-      finally:
-         self._write_lock.release()         
+        if normurl in self._dict:
+            return self._dict[normurl].keys()
+        else:
+            return []
 
-   def removeProperty(self, normurl, propertyname):
-      self._write_lock.acquire(True)
-      try:
-         if not self._loaded:
+    def getProperty(self, normurl, propertyname):
+        if not self._loaded:
             self.performInitialization()
-         if normurl in self._dict:      
-            locatordict = self._dict[normurl] 
-            if propertyname in locatordict:
-               del locatordict[propertyname]
-               self._dict[normurl] = locatordict
-               self._dict.sync()
-      finally:
-         self._write_lock.release()         
-   
-   def removeProperties(self, normurl):
-      self._write_lock.acquire(True)
-      try:
-         if not self._loaded:
-            self.performInitialization()
-         if normurl in self._dict:      
-            del self._dict[normurl] 
-      finally:
-         self._write_lock.release()         
-   
-   def copyProperties(self, origurl, desturl):
-      self._write_lock.acquire(True)
-      try:
-         if not self._loaded:
-            self.performInitialization()
-         if origurl in self._dict:      
-            self._dict[desturl] = self._dict[origurl].copy() 
-      finally:
-         self._write_lock.release()         
-   
-   def __repr__(self):
-      return repr(self._dict)
-   
-   def __del__(self):
-      if self._loaded:
-         self._dict.close()
+        if normurl not in self._dict:
+            return None
+        resourceprops = self._dict[normurl]
+        if propertyname not in resourceprops:
+            return None
+        else:
+            return resourceprops[propertyname]
 
+    def writeProperty(self, normurl, propertyname, propertyvalue):
+        self._write_lock.acquire(True)
+        try:
+            if not self._loaded:
+                self.performInitialization()
+            if normurl in self._dict:
+                locatordict = self._dict[normurl] 
+            else:
+                locatordict = dict([])    
+            locatordict[propertyname] = propertyvalue
+            self._dict[normurl] = locatordict
+            self._dict.sync()
+        finally:
+            self._write_lock.release()         
 
+    def removeProperty(self, normurl, propertyname):
+        self._write_lock.acquire(True)
+        try:
+            if not self._loaded:
+                self.performInitialization()
+            if normurl in self._dict:      
+                locatordict = self._dict[normurl] 
+                if propertyname in locatordict:
+                    del locatordict[propertyname]
+                    self._dict[normurl] = locatordict
+                    self._dict.sync()
+        finally:
+            self._write_lock.release()         
 
+    def removeProperties(self, normurl):
+        self._write_lock.acquire(True)
+        try:
+            if not self._loaded:
+                self.performInitialization()
+            if normurl in self._dict:      
+                del self._dict[normurl] 
+        finally:
+            self._write_lock.release()         
+
+    def copyProperties(self, origurl, desturl):
+        self._write_lock.acquire(True)
+        try:
+            if not self._loaded:
+                self.performInitialization()
+            if origurl in self._dict:      
+                self._dict[desturl] = self._dict[origurl].copy() 
+        finally:
+            self._write_lock.release()         
+
+    def __repr__(self):
+        return repr(self._dict)
+
+    def __del__(self):
+        if self._loaded:
+            self._dict.close()
 
 def writeProperty(pm, mappedpath, displaypath, propns, propname, propupdatemethod, propvalue, reallydoit = True):
-   reservedprops = ['creationdate', 'displayname', 'getcontenttype','resourcetype','getlastmodified', 'getcontentlength', 'getetag', 'getcontentlanguage', 'source', 'lockdiscovery', 'supportedlock']
-   if propns == None:
-      propns = ''
-   
-   if propns == 'DAV:':
-      if propname in reservedprops:
-         return "409 Conflict"
-   
-   if reallydoit:
-      if propupdatemethod == 'set':
-         pm.writeProperty(displaypath, propns + ';' + propname, propvalue)
-      elif propupdatemethod == 'remove':
-         pm.removeProperty(displaypath, propns + ';' + propname)
-   return "200 OK"      
-   
-def getProperty(pm, lm, mappedpath, displaypath, propns, propname, etagprovider):
-   if propns == None:
-      propns = ''
+    reservedprops = ['creationdate', 'displayname', 'getcontenttype','resourcetype','getlastmodified', 'getcontentlength', 'getetag', 'getcontentlanguage', 'source', 'lockdiscovery', 'supportedlock']
+    if propns is None:
+        propns = ''
 
-   if propns == 'DAV:':
-      isfile = os.path.isfile(mappedpath)
-      if propname == 'creationdate':
-         statresults = os.stat(mappedpath)
-         return (httpdatehelper.getstrftime(statresults[stat.ST_CTIME]), "200 OK")        
-      elif propname == 'displayname':
-         return (displaypath, "200 OK")
-      elif propname == 'getcontenttype':
-         if isfile:
-            (mimetype, mimeencoding) = mimetypes.guess_type(mappedpath);
-            if mimetype == '' or mimetype == None:
-                mimetype = 'application/octet-stream'             
-            return (mimetype, "200 OK")
-         else:
-            return ('text/html', "200 OK")
-      elif propname == 'resourcetype':
-         if os.path.isdir(mappedpath):
-            return ('<D:collection />', "200 OK")            
-         else:
-            return ('', "200 OK")   
-      elif propname == 'getlastmodified':
-         statresults = os.stat(mappedpath)
-         return (httpdatehelper.getstrftime(statresults[stat.ST_MTIME]), "200 OK")                     
-      elif propname == 'getcontentlength':
-         if isfile:
+    if propns == 'DAV:':
+        if propname in reservedprops:
+            raise HTTPRequestException(processrequesterrorhandler.HTTP_CONFLICT)               
+
+    if reallydoit:
+        if propupdatemethod == 'set':
+            pm.writeProperty(displaypath, propns + ';' + propname, propvalue)
+        elif propupdatemethod == 'remove':
+            pm.removeProperty(displaypath, propns + ';' + propname)
+    return      
+
+# raises HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND) if not found
+def getProperty(pm, lm, mappedpath, displaypath, propns, propname, etagprovider):
+    if propns is None:
+        propns = ''
+
+    if propns == 'DAV:':
+        isfile = os.path.isfile(mappedpath)
+        if propname == 'creationdate':
             statresults = os.stat(mappedpath)
-            return (str(statresults[stat.ST_SIZE]), "200 OK")
-         return (None, "404 Not Found")
-      elif propname == 'getetag':
-         if isfile:
-            return (etagprovider(mappedpath), "200 OK")
-         return (None, "404 Not Found")
-      elif propname == 'lockdiscovery':
-         lockinfo = ''         
-         activelocklist = lm.getURLLocktokenList(displaypath)
-         for activelocktoken in activelocklist:
-            lockinfo = lockinfo + '<D:activelock>\n'
-            lockinfo = lockinfo + '<D:locktype><' + lm.getLockProperty(activelocktoken, 'LOCKTYPE') + '/></D:locktype>\n'
-            lockinfo = lockinfo + '<D:lockscope><' + lm.getLockProperty(activelocktoken, 'LOCKSCOPE') + '/></D:lockscope>\n'
-            lockinfo = lockinfo + '<D:depth>' + lm.getLockProperty(activelocktoken, 'LOCKDEPTH') + '</D:depth>\n'
-            lockinfo = lockinfo + '<D:owner>' + lm.getLockProperty(activelocktoken, 'LOCKOWNER') + '</D:owner>\n'
-            lockinfo = lockinfo + '<D:timeout>' + lm.getLockProperty(activelocktoken, 'LOCKTIME') + '</D:timeout>\n'
-            lockinfo = lockinfo + '<D:locktoken><D:href>' + activelocktoken + '</D:href></D:locktoken>\n'
-            lockinfo = lockinfo + '</D:activelock>\n'
-         return (lockinfo, "200 OK")
-      elif propname == 'supportedlock':
-         return ('<D:lockentry xmlns:D=\"DAV:\" >\n<D:lockscope><D:exclusive/></D:lockscope>\n<D:locktype><D:write/></D:locktype>\n</D:lockentry>\n<D:lockentry xmlns:D=\"DAV:\" >\n<D:lockscope><D:shared/></D:lockscope>\n<D:locktype><D:write/></D:locktype>\n</D:lockentry>', "200 OK")
-      elif propname == 'getcontentlanguage' or propname == 'source':
-         return (None, "404 Not Found")
-      
-   propvalue = pm.getProperty(displaypath, propns + ';' + propname)
-   if propvalue == None:
-      return (None, "404 Not Found")
-   else:
-      return (propvalue, "200 OK")
+            return httpdatehelper.getstrftime(statresults[stat.ST_CTIME])        
+        elif propname == 'displayname':
+            return displaypath
+        elif propname == 'getcontenttype':
+            if isfile:
+                (mimetype, mimeencoding) = mimetypes.guess_type(mappedpath);
+                if mimetype == '' or mimetype is None:
+                    mimetype = 'application/octet-stream'             
+                return mimetype
+            else:
+                return 'text/html'
+        elif propname == 'resourcetype':
+            if os.path.isdir(mappedpath):
+                return '<D:collection />'            
+            else:
+                return ''   
+        elif propname == 'getlastmodified':
+            statresults = os.stat(mappedpath)
+            return httpdatehelper.getstrftime(statresults[stat.ST_MTIME])
+        elif propname == 'getcontentlength':
+            if isfile:
+                statresults = os.stat(mappedpath)
+                return str(statresults[stat.ST_SIZE])
+            raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND)               
+        elif propname == 'getetag':
+            if isfile:
+                return etagprovider(mappedpath)
+            raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND)               
+        elif propname == 'lockdiscovery':
+            lockinfo = ''         
+            activelocklist = lm.getURLLocktokenList(displaypath)
+            for activelocktoken in activelocklist:
+                lockinfo = lockinfo + '<D:activelock>\n'
+                lockinfo = lockinfo + '<D:locktype><' + lm.getLockProperty(activelocktoken, 'LOCKTYPE') + '/></D:locktype>\n'
+                lockinfo = lockinfo + '<D:lockscope><' + lm.getLockProperty(activelocktoken, 'LOCKSCOPE') + '/></D:lockscope>\n'
+                lockinfo = lockinfo + '<D:depth>' + lm.getLockProperty(activelocktoken, 'LOCKDEPTH') + '</D:depth>\n'
+                lockinfo = lockinfo + '<D:owner>' + lm.getLockProperty(activelocktoken, 'LOCKOWNER') + '</D:owner>\n'
+                lockinfo = lockinfo + '<D:timeout>' + lm.getLockProperty(activelocktoken, 'LOCKTIME') + '</D:timeout>\n'
+                lockinfo = lockinfo + '<D:locktoken><D:href>' + activelocktoken + '</D:href></D:locktoken>\n'
+                lockinfo = lockinfo + '</D:activelock>\n'
+            return lockinfo
+        elif propname == 'supportedlock':
+            return '<D:lockentry xmlns:D=\"DAV:\" >\n<D:lockscope><D:exclusive/></D:lockscope>\n<D:locktype><D:write/></D:locktype>\n</D:lockentry>\n<D:lockentry xmlns:D=\"DAV:\" >\n<D:lockscope><D:shared/></D:lockscope>\n<D:locktype><D:write/></D:locktype>\n</D:lockentry>'
+        elif propname == 'getcontentlanguage' or propname == 'source':
+            raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND)               
+
+    propvalue = pm.getProperty(displaypath, propns + ';' + propname)
+    if propvalue is None:
+        raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND)               
+    else:
+        return propvalue
 
 
 
 def getApplicablePropertyNames(pm, mappedpath, displaypath):
-   appProps = []
-   #DAV properties for all resources
-   appProps.append( ('DAV:','creationdate') )
-   appProps.append( ('DAV:','displayname') )
-   appProps.append( ('DAV:','getcontenttype') )
-   appProps.append( ('DAV:','resourcetype') )
-   appProps.append( ('DAV:','getlastmodified') )   
-   
-   #appProps.append( ('DAV:','getcontentlanguage') ) # not supported
-   #appProps.append( ('DAV:','source') ) # not supported
-   appProps.append( ('DAV:','lockdiscovery') ) 
-   appProps.append( ('DAV:','supportedlock') ) 
-   
-   if os.path.isfile(mappedpath):
-      appProps.append( ('DAV:','getcontentlength') )
-      appProps.append( ('DAV:','getetag') )
-   
-   otherprops = pm.getProperties(displaypath)
-   for otherprop in otherprops:
-      otherns, othername = otherprop.split(';',1)
-      appProps.append( (otherns, othername) )
-   return appProps
+    appProps = []
+    #DAV properties for all resources
+    appProps.append( ('DAV:','creationdate') )
+    appProps.append( ('DAV:','displayname') )
+    appProps.append( ('DAV:','getcontenttype') )
+    appProps.append( ('DAV:','resourcetype') )
+    appProps.append( ('DAV:','getlastmodified') )   
+
+    #appProps.append( ('DAV:','getcontentlanguage') ) # not supported
+    #appProps.append( ('DAV:','source') ) # not supported
+    appProps.append( ('DAV:','lockdiscovery') ) 
+    appProps.append( ('DAV:','supportedlock') ) 
+
+    if os.path.isfile(mappedpath):
+        appProps.append( ('DAV:','getcontentlength') )
+        appProps.append( ('DAV:','getetag') )
+
+    otherprops = pm.getProperties(displaypath)
+    for otherprop in otherprops:
+        otherns, othername = otherprop.split(';',1)
+        appProps.append( (otherns, othername) )
+    return appProps
 
 
 
