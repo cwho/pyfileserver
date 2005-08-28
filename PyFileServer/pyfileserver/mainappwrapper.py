@@ -19,16 +19,18 @@ import sys
 import atexit
 import traceback
 
-import etagprovider
 from extrequestserver import RequestServer
 from processrequesterrorhandler import ErrorPrinter
 from httpauthentication import HTTPAuthenticator, SimpleDomainController
 from requestresolver import RequestResolver
 from pyfiledomaincontroller import PyFileServerDomainController
+
+
 from propertylibrary import PropertyManager
-from propertylibrary import LockManager
+from locklibrary import LockManager
 import websupportfuncs
 import httpdatehelper
+from pyfileserver.fileabstractionlayer import FilesystemAbstractionLayer
 
 class PyFileApp(object):
 
@@ -61,6 +63,10 @@ class PyFileApp(object):
 
 
         self._srvcfg = servcfg
+        
+        #add default abstraction layer
+        self._srvcfg['resAL_library']['*'] = FilesystemAbstractionLayer()
+        
         self._infoHeader = '<a href="mailto:%s">Administrator</a> at %s' % (servcfg.get('Info_AdminEmail',''), servcfg.get('Info_Organization',''))
         self._verbose = servcfg.get('verbose', 0)
 
@@ -69,7 +75,6 @@ class PyFileApp(object):
 
         _locksmanagerobj = servcfg.get('locksmanager', None) or LockManager(_locksfile)
         _propsmanagerobj = servcfg.get('propsmanager', None) or PropertyManager(_propsfile)     
-        _etagproviderfuncobj = servcfg.get('etagproviderfunction', None) or etagprovider.getETag
         _domaincontrollerobj = servcfg.get('domaincontroller', None) or PyFileServerDomainController()
 
 
@@ -78,7 +83,7 @@ class PyFileApp(object):
         _authacceptdigest = servcfg.get('acceptdigest', True)
         _authdefaultdigest = servcfg.get('defaultdigest', True)
 
-        application = RequestServer(_propsmanagerobj, _locksmanagerobj, _etagproviderfuncobj)      
+        application = RequestServer(_propsmanagerobj, _locksmanagerobj)      
         application = HTTPAuthenticator(application, _domaincontrollerobj, _authacceptbasic, _authacceptdigest, _authdefaultdigest)      
         application = RequestResolver(application)      
         application = ErrorPrinter(application, server_descriptor=self._infoHeader) 

@@ -10,8 +10,8 @@ websupportfuncs
 This module consists of miscellaneous support functions for PyFileServer::
 
    resource list functions
-      recursiveGetPath(dirtorecurs, displaypath, recursfurther, liststore, preadd=True)
-      getDepthActionList(mappedpath, displaypath, depthlevel, preadd=True)
+      recursiveGetPath(resourceAL, dirtorecurs, displaypath, recursfurther, liststore, preadd=True)
+      getDepthActionList(resourceAL, mappedpath, displaypath, depthlevel, preadd=True)
       getCopyDepthActionList(depthactionlist, origpath, origdisplaypath, destpath, destdisplaypath)
 
    URL functions
@@ -39,25 +39,22 @@ This module is specific to the PyFileServer application.
 
 __docformat__ = 'reStructuredText'
 
-import os
-import os.path
-import sys
 import re
 import urllib
 
 import httpdatehelper
 
 
-def recursiveGetPath(dirtorecurs, displaypath, recursfurther, liststore, preadd=True):   
-    filelist = os.listdir(dirtorecurs)
+def recursiveGetPath(resourceAL, dirtorecurs, displaypath, recursfurther, liststore, preadd=True):   
+    filelist = resourceAL.getCollectionContents(dirtorecurs)
     for f in filelist:
-        filename = os.path.join(dirtorecurs, f)
-        if os.path.isdir(filename):
+        filename = resourceAL.joinPath(dirtorecurs, f)
+        if resourceAL.isCollection(filename):
             filedisplaypath = displaypath + f + "/"
             if preadd:
                 liststore.append( (filename , filedisplaypath) )
             if recursfurther:
-                recursiveGetPath(filename, filedisplaypath, recursfurther, liststore, preadd)
+                recursiveGetPath(resourceAL, filename, filedisplaypath, recursfurther, liststore, preadd)
             if not preadd:
                 liststore.append( (filename , filedisplaypath) )
         else: #file
@@ -65,12 +62,12 @@ def recursiveGetPath(dirtorecurs, displaypath, recursfurther, liststore, preadd=
             liststore.append( (filename , filedisplaypath) )
 
 # note it must return [(mappedpath, displaypath)] even if mappedpath does not exist
-def getDepthActionList(mappedpath, displaypath, depthlevel, preadd=True):
-    if os.path.isdir(mappedpath) and depthlevel != '0':
+def getDepthActionList(resourceAL, mappedpath, displaypath, depthlevel, preadd=True):
+    if resourceAL.isCollection(mappedpath) and depthlevel != '0':
         liststore = [] 
         if preadd:
             liststore.append((mappedpath,displaypath))
-        recursiveGetPath(mappedpath, displaypath, depthlevel == 'infinity', liststore, preadd)
+        recursiveGetPath(resourceAL, mappedpath, displaypath, depthlevel == 'infinity', liststore, preadd)
         if not preadd:
             liststore.append((mappedpath,displaypath))
         return liststore         

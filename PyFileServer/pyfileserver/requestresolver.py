@@ -136,14 +136,7 @@ classes::
 __docformat__ = 'reStructuredText'
 
 # Python Built-in imports
-import os
-import os.path
-import sys
-import stat
 import urllib
-import time
-import mimetypes
-import cgi
 import re
 
 # PyFileServer Imports
@@ -153,51 +146,51 @@ import websupportfuncs
 import httpdatehelper
 
         
-def resolveRealmURI(mapcfg, requestpath):
-    requestpath = urllib.unquote(requestpath)
-
-    # sorting by reverse length
-    mapcfgkeys = mapcfg.keys()
-    mapcfgkeys.sort(key = len, reverse = True)
-
-    mapdirprefix = ''
-
-    for tmp_mapdirprefix in mapcfgkeys:
-        # @@: Case sensitivity should be an option of some sort here; 
-        #     os.path.normpath might give the prefered case for a filename.
-        if requestpath.upper() == tmp_mapdirprefix.upper() or requestpath.upper().startswith(tmp_mapdirprefix.upper() + "/"):
-            mapdirprefix = tmp_mapdirprefix   
-            break
-    else:
-        # @@: perhaps this should raise an exception here
-        return (None, None, None)
-    
-    # no security risk here - the relativepath (part of the URL) is canonized using
-    # normpath, and then the share directory name is added. So it is not possible to 
-    # use ..s to peruse out of the share directory.
-    relativepath = requestpath[len(mapdirprefix):]
-    localheadpath = mapcfg[mapdirprefix]
-
-    relativepath = relativepath.replace("/", os.sep)
-
-    if relativepath.endswith(os.sep):
-        relativepath = relativepath[:-len(os.sep)] # remove suffix os.sep since it causes error (SyntaxError) with os.path functions
-
-    normrelativepath = ''
-    if relativepath != '':          # avoid adding of .s
-        normrelativepath = os.path.normpath(relativepath)   
-           
-    mappedpath = localheadpath + os.sep + normrelativepath
-   
-    if(normrelativepath != ""):
-        displaypath = mapdirprefix + normrelativepath.replace(os.sep, "/")
-    else:
-        displaypath = mapdirprefix 
-  
-    if os.path.isdir(mappedpath): 
-        displaypath = displaypath + "/"
-
-    return (mapdirprefix, mappedpath, displaypath)    
+#def resolveRealmURI(mapcfg, requestpath):
+#    requestpath = urllib.unquote(requestpath)
+#
+#    # sorting by reverse length
+#    mapcfgkeys = mapcfg.keys()
+#    mapcfgkeys.sort(key = len, reverse = True)
+#
+#    mapdirprefix = ''
+#
+#    for tmp_mapdirprefix in mapcfgkeys:
+#        # @@: Case sensitivity should be an option of some sort here; 
+#        #     os.path.normpath might give the prefered case for a filename.
+#        if requestpath.upper() == tmp_mapdirprefix.upper() or requestpath.upper().startswith(tmp_mapdirprefix.upper() + "/"):
+#            mapdirprefix = tmp_mapdirprefix   
+#            break
+#    else:
+#        # @@: perhaps this should raise an exception here
+#        return (None, None, None)
+#    
+#    # no security risk here - the relativepath (part of the URL) is canonized using
+#    # normpath, and then the share directory name is added. So it is not possible to 
+#    # use ..s to peruse out of the share directory.
+#    relativepath = requestpath[len(mapdirprefix):]
+#    localheadpath = mapcfg[mapdirprefix]
+#
+#    relativepath = relativepath.replace("/", os.sep)
+#
+#    if relativepath.endswith(os.sep):
+#        relativepath = relativepath[:-len(os.sep)] # remove suffix os.sep since it causes error (SyntaxError) with os.path functions
+#
+#    normrelativepath = ''
+#    if relativepath != '':          # avoid adding of .s
+#        normrelativepath = os.path.normpath(relativepath)   
+#           
+#    mappedpath = localheadpath + os.sep + normrelativepath
+#   
+#    if(normrelativepath != ""):
+#        displaypath = mapdirprefix + normrelativepath.replace(os.sep, "/")
+#    else:
+#        displaypath = mapdirprefix 
+#  
+#    if os.path.isdir(mappedpath): 
+#        displaypath = displaypath + "/"
+#
+#    return (mapdirprefix, mappedpath, displaypath)    
     
 
 class RequestResolver(object):
@@ -209,7 +202,7 @@ class RequestResolver(object):
         self._srvcfg = environ['pyfileserver.config']
 
         requestmethod =  environ['REQUEST_METHOD']
-        requestpath =  environ['PATH_INFO']
+        requestpath = urllib.unquote(environ['PATH_INFO'])
 
         if requestmethod == 'TRACE':
             return self.doTRACE(environ, start_response)
@@ -226,7 +219,7 @@ class RequestResolver(object):
             else:
                 raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND)
     
-        (mappedrealm, mappedpath, displaypath) = resolveRealmURI(environ['pyfileserver.config']['config_mapping'], requestpath)            
+        (mappedrealm, mappedpath, displaypath, resourceAL) = self.resolveRealmURI(environ['pyfileserver.config'], requestpath)            
    
         if mappedrealm is None:
             raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND)
@@ -234,10 +227,11 @@ class RequestResolver(object):
         environ['pyfileserver.mappedrealm'] = mappedrealm
         environ['pyfileserver.mappedpath'] = mappedpath 
         environ['pyfileserver.mappedURI'] = displaypath
+        environ['pyfileserver.resourceAL'] = resourceAL
 
         if 'HTTP_DESTINATION' in environ:
             desturl = websupportfuncs.getRelativeURL(environ['HTTP_DESTINATION'], environ)
-            (destrealm, destpath, destdisplaypath) = resolveRealmURI(environ['pyfileserver.config']['config_mapping'], desturl)            
+            (destrealm, destpath, destdisplaypath, destresourceAL) = self.resolveRealmURI(environ['pyfileserver.config'], desturl)            
       
             if destrealm is None:
                  raise HTTPRequestException(processrequesterrorhandler.HTTP_BAD_REQUEST)
@@ -245,6 +239,7 @@ class RequestResolver(object):
             environ['pyfileserver.destrealm'] = destrealm
             environ['pyfileserver.destpath'] = destpath 
             environ['pyfileserver.destURI'] = destdisplaypath
+            environ['pyfileserver.destresourceAL'] = destresourceAL
       
 
         if requestmethod == 'OPTIONS':
@@ -267,13 +262,16 @@ class RequestResolver(object):
         return ['']  
 
     def doOPTIONSSpec(self, environ, start_response):
+        resourceAL = environ['pyfileserver.resourceAL']
+
         headers = []
-        if os.path.isdir(environ['pyfileserver.mappedpath']):
+        if resourceAL.isCollection(environ['pyfileserver.mappedpath']):
             headers.append( ('Allow','OPTIONS HEAD GET DELETE PROPFIND PROPPATCH COPY MOVE LOCK UNLOCK') )
-        elif os.path.isfile(environ['pyfileserver.mappedpath']):
+        elif resourceAL.isResource(environ['pyfileserver.mappedpath']):
             headers.append( ('Allow','OPTIONS HEAD GET PUT DELETE PROPFIND PROPPATCH COPY MOVE LOCK UNLOCK') )
-            headers.append( ('Allow-Ranges','bytes') )
-        elif os.path.isdir(os.path.dirname(environ['pyfileserver.mappedpath'])):
+            if resourceAL.supportRanges():
+                headers.append( ('Allow-Ranges','bytes') )
+        elif resourceAL.isCollection(resourceAL.getContainingCollection(environ['pyfileserver.mappedpath'])):
             headers.append( ('Allow','OPTIONS PUT MKCOL') )
         else:
             raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND)
@@ -284,6 +282,55 @@ class RequestResolver(object):
         headers.append( ('Date',httpdatehelper.getstrftime()) )
         start_response('200 OK', headers)        
         return ['']     
+        
+    def resolveRealmURI(self, srvcfg, requestpath):
+
+        mapcfg = srvcfg['config_mapping']
+        resALcfg = srvcfg['resAL_mapping']
+        resALreg = srvcfg['resAL_library']
+
+        # sorting by reverse length
+        mapcfgkeys = mapcfg.keys()
+        mapcfgkeys.sort(key = len, reverse = True)
+
+        mapdirprefix = ''
+
+        for tmp_mapdirprefix in mapcfgkeys:
+            # @@: Case sensitivity should be an option of some sort here; 
+            #     os.path.normpath might give the prefered case for a filename.
+            if requestpath.upper() == tmp_mapdirprefix.upper() or requestpath.upper().startswith(tmp_mapdirprefix.upper() + "/"):
+                mapdirprefix = tmp_mapdirprefix   
+                break
+        else:
+            # leaving it to caller function to raise exception - different exception
+            # applicable for resolving base or destination urls.
+            return (None, None, None, None)
+
+        resourceAL = resALreg['*'] # default set up mainappwrapper.py
+        if mapdirprefix in resALcfg:
+            if resALcfg[mapdirprefix] in resALreg:
+                resourceAL = resALreg[resALcfg[mapdirprefix]]
+
+        
+        # no security risk here - the relativepath (part of the URL) is canonized using
+        # normpath, and then the share directory name is added. So it is not possible to 
+        # use ..s to peruse out of the share directory.
+        relativepath = requestpath[len(mapdirprefix):]
+        localheadpath = mapcfg[mapdirprefix]
+        
+        if relativepath.strip("/") == "":
+            return (mapdirprefix, localheadpath, mapdirprefix + "/", resourceAL) 
+         
+        mappedpath = resourceAL.resolvePath(localheadpath, relativepath.strip("/").split("/"))  
+        displaypathlist = resourceAL.breakPath(localheadpath, mappedpath)
+   
+        displaypath = mapdirprefix + "/" + "/".join(displaypathlist)
+  
+        if resourceAL.isCollection(mappedpath): 
+            displaypath = displaypath + "/"
+
+        return (mapdirprefix, mappedpath, displaypath, resourceAL)    
+
     
     def printConfigErrorMessage(self):        
         message = """\
