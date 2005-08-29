@@ -7,67 +7,84 @@ propertylibrary
 :Project: PyFileServer, http://pyfilesync.berlios.de/
 :Copyright: Lesser GNU Public License, see LICENSE file attached with package
 
-This module consists of a number of miscellaneous functions for the locks and 
+This module consists of a number of miscellaneous functions for the dead 
 properties features of webDAV.
 
-It also includes an implementation of a LockManager and a PropertyManager for
-storage of locks and dead properties respectively. These implementations use
-shelve for file storage.
+It also includes an implementation of a PropertyManager for
+storage of dead properties. This implementation use
+shelve for file storage.  See extrequestserver.py for details.
+
+PropertyManagers must provide the methods as described in 
+propertymanagerinterface_
+
+.. _propertymanagerinterface : interfaces/propertymanagerinterface.py
+
+
+
+Properties and PyFileServer
+---------------------------
+Properties of a resource refers to the attributes of the resource. A property
+is referenced by the property name and the property namespace. We usually
+refer to the property as ``{property namespace}property name`` 
+
+Properties of resources as defined in webdav falls under three categories:
+
+Live properties
+   These properties are attributes actively maintained by the server, such as 
+   file size, or read permissions. if you are sharing a database record as a 
+   resource, for example, the attributes of the record could become the live 
+   properties of the resource.
+
+   The webdav specification defines the following properties that could be
+   live properties (refer to webdav specification for details):
+   {DAV:}creationdate
+   {DAV:}displayname
+   {DAV:}getcontentlanguage
+   {DAV:}getcontentlength
+   {DAV:}getcontenttype
+   {DAV:}getetag
+   {DAV:}getlastmodified
+   {DAV:}resourcetype
+   {DAV:}source
+
+   These properties are implemented by the abstraction layer.
+
+Locking properties 
+   They refer to the two webdav-defined properties 
+   {DAV:}supportedlock and {DAV:}lockdiscovery
+    
+   These properties are implemented by the locking library in
+   ``pyfileserver.locklibrary`` and dead properties library in
+   ``pyfileserver.propertylibrary``
+      
+Dead properties
+   They refer to arbitrarily assigned properties not actively maintained. 
+
+   These properties are implemented by the dead properties library in
+   ``pyfileserver.propertylibrary``
+
+Interface
+---------
+
+Classes::
+
+   class PropertyManager(object)
+
+Misc and Interface methods::
+
+   removeProperties(pm, displaypath)
+   copyProperties(pm, displaypath, destdisplaypath)
+   writeProperty(pm, resourceAL, mappedpath, displaypath, propns, propname, propupdatemethod, propvalue, reallydoit = True)
+   getProperty(pm, lm, resourceAL, mappedpath, displaypath, propns, propname)
+   getApplicablePropertyNames(pm, lm, resourceAL, mappedpath, displaypath)
+
 
 *author note*: More documentation here required
-
-See extrequestserver.py for details::
-
-   class LockManager   
-      __init__(self, persiststore)
-      __repr__(self)
-      __del__(self)
-      performInitialization(self)
-      generateLock(self, username, locktype = 'write', lockscope = 'exclusive', lockdepth = 'infinite', lockowner = '', timeout=LOCK_TIME_OUT_DEFAULT)
-      validateLock(self, locktoken)
-      deleteLock(self, locktoken)
-      isTokenLockedByUser(self, locktoken, username)
-      isURLLocked(self, url)
-      getLockProperty(self, locktoken, lockproperty)
-      isURLLockedByToken(self, url, locktoken)
-      getURLLocktokenList(self, url)
-      getURLLocktokenListOfUser(self, url, username)
-      addURLToLock(self, url, locktoken)
-      removeAllLocksFromURL(self, url)
-      refreshLock(self, locktoken, timeout=LOCK_TIME_OUT_DEFAULT)
-      checkLocksToAdd(self, displaypath)
-   
-   class PropertyManager
-      __init__(self, persiststore)
-      __repr__(self)
-      __del__(self)
-      performInitialization(self)
-      getProperties(self, normurl)
-      getProperty(self, normurl, propertyname)
-      writeProperty(self, normurl, propertyname, propertyvalue)
-      removeProperty(self, normurl, propertyname)
-      removeProperties(self, normurl)
-      copyProperties(self, origurl, desturl)
-   
-   
-   Note: Custom implementations of LockManager and PropertyManager do *not* have
-   to implement the following miscellaneous functions   
-   
-   Miscellaneous functions
-      readTimeoutValueHeader(timeoutvalue)
-      writeProperty(pm, mappedpath, displaypath, propns, propname, propupdatemethod, propvalue, reallydoit=True)
-      getProperty(pm, lm, mappedpath, displaypath, propns, propname, etagprovider)
-      getApplicablePropertyNames(pm, mappedpath, displaypath)
-   
 
 This module is specific to the PyFileServer application.
 
 """
 
-
-#
-#RR: Lots of review comments here - this is waiting for a bigger refactor
-#
 
 #@@: Use of shelve means this is only really useful in a threaded environment.
 #    And if you have just a single-process threaded environment, you could get
@@ -75,6 +92,10 @@ This module is specific to the PyFileServer application.
 #    it would be better to move off shelve anyway, probably to a system with
 #    a directory of per-file locks, using the file locking primitives (which,
 #    sadly, are not quite portable).
+# @@: It would probably be easy to store the properties as pickle objects
+# in a parallel directory structure to the files you are describing.
+# Pickle is expedient, but later you could use something more readable
+# (pickles aren't particularly readable)
 
 __docformat__ = 'reStructuredText'
 
@@ -97,11 +118,6 @@ import locklibrary
 A low performance dead properties library using shelve
 """
 
-# @@: It would probably be easy to store the properties as pickle objects
-# in a parallel directory structure to the files you are describing.
-# Pickle is expedient, but later you could use something more readable
-# (pickles aren't particularly readable)
-
 class PropertyManager(object):
 
     def __init__(self, persiststore):
@@ -112,7 +128,7 @@ class PropertyManager(object):
         self._persiststorepath = persiststore
 
 
-    def performInitialization(self):
+    def _performInitialization(self):
         self._init_lock.acquire(True)
         try:
             if self._loaded:       # test again within the critical section
@@ -124,15 +140,20 @@ class PropertyManager(object):
 
     def getProperties(self, normurl):
         if not self._loaded:
-            self.performInitialization()
+            self._performInitialization()        
+        returnlist = []
         if normurl in self._dict:
-            return self._dict[normurl].keys()
-        else:
-            return []
+            for propdata in self._dict[normurl].keys():
+                pns, pname = propdata.split(';',1)
+                returnlist.append((pns, pname))
+        return returnlist
 
-    def getProperty(self, normurl, propertyname):
+    def getProperty(self, normurl, propname, propns):
+        if propns is None:
+            propns = ''        
+        propertyname = propns + ';' + propname
         if not self._loaded:
-            self.performInitialization()
+            self._performInitialization()
         if normurl not in self._dict:
             return None
         resourceprops = self._dict[normurl]
@@ -141,11 +162,14 @@ class PropertyManager(object):
         else:
             return resourceprops[propertyname]
 
-    def writeProperty(self, normurl, propertyname, propertyvalue):
+    def writeProperty(self, normurl, propname, propns, propertyvalue):
+        if propns is None:
+            propns = ''        
+        propertyname = propns + ';' + propname
         self._write_lock.acquire(True)
         try:
             if not self._loaded:
-                self.performInitialization()
+                self._performInitialization()
             if normurl in self._dict:
                 locatordict = self._dict[normurl] 
             else:
@@ -156,11 +180,14 @@ class PropertyManager(object):
         finally:
             self._write_lock.release()         
 
-    def removeProperty(self, normurl, propertyname):
+    def removeProperty(self, normurl, propname, propns):
+        if propns is None:
+            propns = ''        
+        propertyname = propns + ';' + propname
         self._write_lock.acquire(True)
         try:
             if not self._loaded:
-                self.performInitialization()
+                self._performInitialization()
             if normurl in self._dict:      
                 locatordict = self._dict[normurl] 
                 if propertyname in locatordict:
@@ -174,7 +201,7 @@ class PropertyManager(object):
         self._write_lock.acquire(True)
         try:
             if not self._loaded:
-                self.performInitialization()
+                self._performInitialization()
             if normurl in self._dict:      
                 del self._dict[normurl] 
         finally:
@@ -184,7 +211,7 @@ class PropertyManager(object):
         self._write_lock.acquire(True)
         try:
             if not self._loaded:
-                self.performInitialization()
+                self._performInitialization()
             if origurl in self._dict:      
                 self._dict[desturl] = self._dict[origurl].copy() 
         finally:
@@ -226,9 +253,9 @@ def writeProperty(pm, resourceAL, mappedpath, displaypath, propns, propname, pro
     # rest of the items go to dead properties library
     if reallydoit:
         if propupdatemethod == 'set':
-            pm.writeProperty(displaypath, propns + ';' + propname, propvalue)
+            pm.writeProperty(displaypath, propname, propns, propvalue)
         elif propupdatemethod == 'remove':
-            pm.removeProperty(displaypath, propns + ';' + propname)
+            pm.removeProperty(displaypath, propname, propns)
     return      
 
 # raises HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND) if not found
@@ -264,7 +291,7 @@ def getProperty(pm, lm, resourceAL, mappedpath, displaypath, propns, propname):
             raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND)               
 
     # dead properties
-    propvalue = pm.getProperty(displaypath, propns + ';' + propname)
+    propvalue = pm.getProperty(displaypath, propname, propns)
     if propvalue is None:
         raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND)               
     else:
@@ -280,8 +307,7 @@ def getApplicablePropertyNames(pm, lm, resourceAL, mappedpath, displaypath):
     appProps.append( ('DAV:','supportedlock') ) 
 
     otherprops = pm.getProperties(displaypath)
-    for otherprop in otherprops:
-        otherns, othername = otherprop.split(';',1)
+    for (otherns, othername) in otherprops:
         appProps.append( (otherns, othername) )
     return appProps
 

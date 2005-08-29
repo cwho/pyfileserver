@@ -68,22 +68,10 @@ Usage::
    domain_controller = SimpleDomainController(users, realm)
 
 
-Domain Controllers must provide the following methods:
+Domain Controllers must provide the methods as described in 
+``pyfileserver.interfaces.domaincontrollerinterface`` (interface_)
 
-+ getDomainRealm(inputRelativeURL, environ): resolves a relative url to the 
-  appropriate realm name
-
-+ requireAuthentication(realmname, environ): returns a boolean on whether 
-  this realm requires authentication or is available for general access
-
-+ isRealmUser(realmname, username, environ): returns a boolean on whether 
-  this username is valid for the realm
-
-+ getRealmUserPassword(realmname, username, environ): returns the password
-  for the given username for the realm. Used for digest authentication.
-
-+ authRealmUser(realmname, username, password, environ): checks whether this
-  username/password pair is valid for the realm. Used for basic authentication.
+.. _interface : interfaces/domaincontrollerinterface.py
 
 The environ variable here is the WSGI 'environ' dictionary. It is passed to 
 all methods of the domain controller as a means for developers to pass information

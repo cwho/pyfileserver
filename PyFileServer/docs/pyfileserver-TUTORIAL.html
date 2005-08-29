@@ -134,7 +134,7 @@ of the configuration file.</p>
 <p><strong>Server Options</strong></p>
 <blockquote>
 <dl class="docutils">
-<dt><strong>Property Options</strong>, <strong>Locks Options</strong>, <strong>Entity Tag Options</strong>, <strong>Domain Controller Options</strong></dt>
+<dt><strong>Property Options</strong>, <strong>Locks Options</strong>, <strong>Domain Controller Options</strong></dt>
 <dd><p class="first">These sections allow the administrator to define python objects
 and functions to customize the application. For example, instead of the
 built-in domain controller that uses the Users section below for
@@ -178,6 +178,7 @@ Info_Organization = 'PyFileServer - Hosted at Sample Server'
 </dd>
 </dl>
 </blockquote>
+<p><strong>Resource Abstraction Layers</strong> : Area to define custom resource abstraction layers.</p>
 <p><strong>Realms</strong>: Area for the administrator to define realms for sharing.</p>
 <p><strong>Users</strong>: Area for the administrator to define users for the realms.</p>
 </blockquote>
@@ -194,7 +195,16 @@ Open the file PyFileServer.conf in a text editor.</p>
 # REALMS
 # if you would like to access files in the location 'c:\v_root' through PyFileServer as
 # http://server:port/v_root, insert the following:
-# addrealm('vroot', 'c:\v_root')
+#   addrealm('vroot', 'c:\v_root', '')
+#
+# The last field refers to the registered name of the abstraction layer to use (register
+# in the above section RESOURCE ABSTRACTION LAYERS). 
+#   addAL('myowndatabase', MyOwnDatabaseAbstractionLayer()) 
+#   addrealm('db', 'database:\UserDB', 'myowndatabase')
+#  
+# If you wish to share files using the default resource abstraction layer provided by
+# PyFileServer, simply omit the field.
+#   addrealm('file', 'C:\files')
 #
 </pre>
 </li>
@@ -463,7 +473,7 @@ map <a class="reference" href="http://localhost/satelliteimages/">http://localho
 </li>
 </ol>
 <hr class="docutils" />
-<p>Last Generated : Tue, 23 Aug 2005 04:39:55 GMT</p>
+<p>Last Generated : Mon, 29 Aug 2005 10:33:36 GMT</p>
 </div>
 </div>
 </body>

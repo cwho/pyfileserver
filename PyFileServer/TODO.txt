@@ -5,23 +5,27 @@ TODO
 This section documents in varying details some of the issues waiting for
 resolution or to be done.
 
-Null Resources Locking
+Better support for Weak Entity Tags
+-----------------------------------
+
+Move entity tag matching from a simple string match to perhaps
+matching from the abstraction layer itself. This allows the 
+abstraction layer to implement weak/semantic entity tags
+
+Change of architecture
 ----------------------
 
-Locking of null resources <>, is not supported at the moment. The current
-implementation uses the filesystem level directly to determine whether
-a collection (directory) or resource (file) exists.
+The application was developed initially as a file-sharing 
+application and then converted to a more generic resource-sharing
+application. Hence most of the functionality is based on what
+files would implement.
 
-There should be an abstraction level to start with::
-
-   hasURLResource(path): return os.path.exists(path)
-   hasCollection(path): return os.path.isdir(path)
-   hasResource(path): return os.path.isfile(path)
-
-and then null resources can be put into the functions as required. They
-also have to be placed into the resource list functions in websupportfunc.
-Various methods have to be made robust to deal correctly with a null 
-resource (non-existing file/directory)
+Need to shift this so that control on what functionality is active
+is based on the resource layer. Example, if entity tags are not
+implemented, then entity tag functionality (headers, matching)
+should be disabled. If {DAV:}getcontentlanguage is implemented in
+the resource layer, then the server should start returning
+language headers.... etc.
 
 
 Gzip Content Encoding

@@ -25,12 +25,14 @@ This module consists of miscellaneous support functions for PyFileServer::
       obtainContentRanges(rangetext, filesize)
    
    evaluate HTTP If-Match, if-None-Match, If-Modified-Since, If-Unmodified-Since headers   
-      evaluateHTTPConditionalsWithoutExceptions(lastmodifiedsecs, entitytag, environ, isnewfile=False)
       evaluateHTTPConditionals(lastmodifiedsecs, entitytag, environ, isnewfile=False)
    
    evaluate webDAV if header   
       getIfHeaderDict(iftext)
       testIfHeaderDict(dictIf, url, locktokenlist, entitytag, returnlocklist, environ)
+      testForLockTokenInIfHeaderDict(dictIf, locktoken, fullurl, headurl)
+
+*author note*: More documentation here required
 
 This module is specific to the PyFileServer application.
 
@@ -172,57 +174,57 @@ def obtainContentRanges(rangetext, filesize):
 
     return (listReturn2, totallength)
 
-
-def evaluateHTTPConditionalsWithoutExceptions(lastmodified, entitytag, environ, isnewfile=False):
-    ## Conditions
-
-    # An HTTP/1.1 origin server, upon receiving a conditional request that includes both a Last-Modified date
-    # (e.g., in an If-Modified-Since or If-Unmodified-Since header field) and one or more entity tags (e.g., 
-    # in an If-Match, If-None-Match, or If-Range header field) as cache validators, MUST NOT return a response 
-    # status of 304 (Not Modified) unless doing so is consistent with all of the conditional header fields in 
-    # the request.
-
-    if 'HTTP_IF_MATCH' in environ:
-        if isnewfile:
-            return '412 Precondition Failed'
-        else:
-            ifmatchlist = environ['HTTP_IF_MATCH'].split(",")
-            for ifmatchtag in ifmatchlist:
-                ifmatchtag = ifmatchtag.strip(" \"\t")
-                if ifmatchtag == entitytag or ifmatchtag == '*':
-                    break   
-                return '412 Precondition Failed'
-
-    # If-None-Match 
-    # If none of the entity tags match, then the server MAY perform the requested method as if the 
-    # If-None-Match header field did not exist, but MUST also ignore any If-Modified-Since header field
-    # (s) in the request. That is, if no entity tags match, then the server MUST NOT return a 304 (Not Modified) 
-    # response.
-    ignoreifmodifiedsince = False         
-    if 'HTTP_IF_NONE_MATCH' in environ:         
-        if isnewfile:
-            ignoreifmodifiedsince = True
-        else:
-            ifmatchlist = environ['HTTP_IF_NONE_MATCH'].split(",")
-            for ifmatchtag in ifmatchlist:
-                ifmatchtag = ifmatchtag.strip(" \"\t")
-                if ifmatchtag == entitytag or ifmatchtag == '*':
-                    return '412 Precondition Failed'
-            ignoreifmodifiedsince = True
-
-    if not isnewfile and 'HTTP_IF_UNMODIFIED_SINCE' in environ:
-        ifunmodtime = httpdatehelper.getsecstime(environ['HTTP_IF_UNMODIFIED_SINCE'])
-        if ifunmodtime:
-            if ifunmodtime <= lastmodified:
-                return '412 Precondition Failed'
-
-    if not isnewfile and 'HTTP_IF_MODIFIED_SINCE' in environ and not ignoreifmodifiedsince:
-        ifmodtime = httpdatehelper.getsecstime(environ['HTTP_IF_MODIFIED_SINCE'])
-        if ifmodtime:
-            if ifmodtime > lastmodified:
-                return '304 Not Modified'
-
-    return '200 OK'
+#
+#def evaluateHTTPConditionalsWithoutExceptions(lastmodified, entitytag, environ, isnewfile=False):
+#    ## Conditions
+#
+#    # An HTTP/1.1 origin server, upon receiving a conditional request that includes both a Last-Modified date
+#    # (e.g., in an If-Modified-Since or If-Unmodified-Since header field) and one or more entity tags (e.g., 
+#    # in an If-Match, If-None-Match, or If-Range header field) as cache validators, MUST NOT return a response 
+#    # status of 304 (Not Modified) unless doing so is consistent with all of the conditional header fields in 
+#    # the request.
+#
+#    if 'HTTP_IF_MATCH' in environ:
+#        if isnewfile:
+#            return '412 Precondition Failed'
+#        else:
+#            ifmatchlist = environ['HTTP_IF_MATCH'].split(",")
+#            for ifmatchtag in ifmatchlist:
+#                ifmatchtag = ifmatchtag.strip(" \"\t")
+#                if ifmatchtag == entitytag or ifmatchtag == '*':
+#                    break   
+#                return '412 Precondition Failed'
+#
+#    # If-None-Match 
+#    # If none of the entity tags match, then the server MAY perform the requested method as if the 
+#    # If-None-Match header field did not exist, but MUST also ignore any If-Modified-Since header field
+#    # (s) in the request. That is, if no entity tags match, then the server MUST NOT return a 304 (Not Modified) 
+#    # response.
+#    ignoreifmodifiedsince = False         
+#    if 'HTTP_IF_NONE_MATCH' in environ:         
+#        if isnewfile:
+#            ignoreifmodifiedsince = True
+#        else:
+#            ifmatchlist = environ['HTTP_IF_NONE_MATCH'].split(",")
+#            for ifmatchtag in ifmatchlist:
+#                ifmatchtag = ifmatchtag.strip(" \"\t")
+#                if ifmatchtag == entitytag or ifmatchtag == '*':
+#                    return '412 Precondition Failed'
+#            ignoreifmodifiedsince = True
+#
+#    if not isnewfile and 'HTTP_IF_UNMODIFIED_SINCE' in environ:
+#        ifunmodtime = httpdatehelper.getsecstime(environ['HTTP_IF_UNMODIFIED_SINCE'])
+#        if ifunmodtime:
+#            if ifunmodtime <= lastmodified:
+#                return '412 Precondition Failed'
+#
+#    if not isnewfile and 'HTTP_IF_MODIFIED_SINCE' in environ and not ignoreifmodifiedsince:
+#        ifmodtime = httpdatehelper.getsecstime(environ['HTTP_IF_MODIFIED_SINCE'])
+#        if ifmodtime:
+#            if ifmodtime > lastmodified:
+#                return '304 Not Modified'
+#
+#    return '200 OK'
 
 
 def evaluateHTTPConditionals(lastmodified, entitytag, environ, isnewfile=False):

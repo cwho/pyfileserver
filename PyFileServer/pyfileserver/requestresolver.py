@@ -54,14 +54,27 @@ Usage::
    WSGIApp = RequestResolver(InternalWSGIApp)
 
 The RequestResolver resolves the requested URL to the following values 
-placed in the environ dictionary::
+placed in the environ dictionary. First it resolves the corresponding
+realm::
 
    url: http://<servername:port>/<approot>/pubshare/PyFileServer/LICENSE
    environ['pyfileserver.mappedrealm'] = /pubshare
+
+Based on the configuration given, the resource abstraction layer for the
+realm is determined. if no configured abstraction layer is found, the
+default abstraction layer fileabstractionlayer.FilesystemAbstractionLayer()
+is used::
+   
+   environ['pyfileserver.resourceAL'] = fileabstractionlayer.MyOwnFilesystemAbstractionLayer()
+
+The path identifiers for the requested url are then resolved using the
+resource abstraction layer::
+
    environ['pyfileserver.mappedpath'] = /home/public/share/PyFileServer/LICENSE 
    environ['pyfileserver.mappedURI'] = /pubshare/PyFileServer/LICENSE
 
-The resolver also resolves any relative paths to its canonical absolute path
+in this case, FilesystemAbstractionLayer resolves any relative paths 
+to its canonical absolute path
 
 The RequestResolver also resolves any value in the Destination request 
 header, if present, to::
@@ -70,6 +83,8 @@ header, if present, to::
    environ['pyfileserver.destrealm'] = /pubshare
    environ['pyfileserver.destpath'] = /home/public/share/PyFileServer/LICENSE-dest 
    environ['pyfileserver.destURI'] = /pubshare/PyFileServer/LICENSE
+   environ['pyfileserver.destresourceAL'] = fileabstractionlayer.MyOwnFilesystemAbstractionLayer()
+   
 
 Interface
 ---------
@@ -122,15 +137,6 @@ classes::
 #    two different URLs -- but it's just an example of another kind of
 #    dispatching that can be done at a higher level.
 #
-#RR: I think its really an architectural difference - between having a resolver
-#    sending requests to different shares to the same application (with different
-#    parameters) vs having a URL dispatcher sending the requests to each specific 
-#    application for different shares.
-#    
-#    What's stopping having different
-#    applications for different shares at the moment is the reliance on a single
-#    locking and dead properties library. Perhaps this can be revisited after that
-#    is solved.   
 
 
 __docformat__ = 'reStructuredText'
@@ -144,54 +150,6 @@ import processrequesterrorhandler
 from processrequesterrorhandler import HTTPRequestException
 import websupportfuncs
 import httpdatehelper
-
-        
-#def resolveRealmURI(mapcfg, requestpath):
-#    requestpath = urllib.unquote(requestpath)
-#
-#    # sorting by reverse length
-#    mapcfgkeys = mapcfg.keys()
-#    mapcfgkeys.sort(key = len, reverse = True)
-#
-#    mapdirprefix = ''
-#
-#    for tmp_mapdirprefix in mapcfgkeys:
-#        # @@: Case sensitivity should be an option of some sort here; 
-#        #     os.path.normpath might give the prefered case for a filename.
-#        if requestpath.upper() == tmp_mapdirprefix.upper() or requestpath.upper().startswith(tmp_mapdirprefix.upper() + "/"):
-#            mapdirprefix = tmp_mapdirprefix   
-#            break
-#    else:
-#        # @@: perhaps this should raise an exception here
-#        return (None, None, None)
-#    
-#    # no security risk here - the relativepath (part of the URL) is canonized using
-#    # normpath, and then the share directory name is added. So it is not possible to 
-#    # use ..s to peruse out of the share directory.
-#    relativepath = requestpath[len(mapdirprefix):]
-#    localheadpath = mapcfg[mapdirprefix]
-#
-#    relativepath = relativepath.replace("/", os.sep)
-#
-#    if relativepath.endswith(os.sep):
-#        relativepath = relativepath[:-len(os.sep)] # remove suffix os.sep since it causes error (SyntaxError) with os.path functions
-#
-#    normrelativepath = ''
-#    if relativepath != '':          # avoid adding of .s
-#        normrelativepath = os.path.normpath(relativepath)   
-#           
-#    mappedpath = localheadpath + os.sep + normrelativepath
-#   
-#    if(normrelativepath != ""):
-#        displaypath = mapdirprefix + normrelativepath.replace(os.sep, "/")
-#    else:
-#        displaypath = mapdirprefix 
-#  
-#    if os.path.isdir(mappedpath): 
-#        displaypath = displaypath + "/"
-#
-#    return (mapdirprefix, mappedpath, displaypath)    
-    
 
 class RequestResolver(object):
 

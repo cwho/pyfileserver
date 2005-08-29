@@ -15,8 +15,7 @@ subapplication::
 
       constructor :
          __init__(self, propertymanager, 
-                        lockmanager, 
-                        etagproviderfunc)
+                        lockmanager)
    
       main application:      
          __call__(self, environ, start_response)
@@ -47,24 +46,41 @@ This module is specific to the PyFileServer application.
 Supporting Objects
 ------------------
 
-The RequestServer takes three supporting objects:   
+The RequestServer takes two supporting objects:   
    
 propertymanager
    An object that provides storage for dead properties assigned for webDAV resources.
    
-   See propertylibrary.PropertyManager in propertylibrary.py for a sample implementation
+   PropertyManagers must provide the methods as described in 
+   ``pyfileserver.interfaces.propertymanagerinterface``
+
+   See propertylibrary.PropertyManager for a sample implementation
    using shelve.
 
 lockmanager
    An object that provides storage for locks made on webDAV resources.
    
-   See propertylibrary.LockManager in propertylibrary.py for a sample implementation
+   LockManagers must provide the methods as described in 
+   ``pyfileserver.interfaces.lockmanagerinterface``
+
+   See locklibrary.LockManager for a sample implementation
    using shelve.
 
-etagproviderfunc
-   A function object to provide entitytags for a given filename.
+The RequestServer also uses a resource abstraction layer placed in 
+``environ['pyfileserver.resourceAL']`` by requestresolver.py
+
+abstractionlayer
+   An object that provides a basic interface to resources. 
    
-   See etagprovider.getETag in etagprovider.py for a sample implementation.
+   This layer allows developers to write layers allowing the application to share
+   resources other than filesystems. 
+
+   Abstraction Layers must provide the methods as described in 
+   ``pyfileserver.interfaces.abstractionlayerinterface``
+   
+   See fileabstractionlayer.FilesystemAbstractionLayer and
+   fileabstractionlayer.ReadOnlyFilesystemAbstractionLayer for sample
+   implementations based on filesystems.
 
 """
 
@@ -82,7 +98,6 @@ import processrequesterrorhandler
 
 import websupportfuncs
 import httpdatehelper
-import etagprovider
 import propertylibrary
 import locklibrary
 
@@ -487,7 +502,9 @@ a.symlink { font-style: italic; }
             except HTTPRequestException, e:
                 dictError[filedisplaypath] = processrequesterrorhandler.interpretErrorException(e)
                 dictHidden[resourceAL.getContainingCollection(filepath)] = ''
-            except Exception:
+            except Exception, e:
+#                print repr(e)
+#                print traceback.format_exception_only(sys.exc_type, sys.exc_value)
                 dictError[filedisplaypath] = '500 Internal Server Error'
                 dictHidden[resourceAL.getContainingCollection(filepath)] = ''
             else:

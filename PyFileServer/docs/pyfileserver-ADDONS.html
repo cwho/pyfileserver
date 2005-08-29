@@ -51,7 +51,7 @@
 <h2><a name="purpose">Purpose</a></h2>
 <p>Usage:</p>
 <pre class="literal-block">
-import pyfileserver.addons.windowsdomaincontroller.SimpleWindowsDomainController
+from pyfileserver.addons.windowsdomaincontroller import SimpleWindowsDomainController
 domaincontroller = SimpleWindowsDomainController(presetdomain = None, presetserver = None)
 </pre>
 <p>where:</p>
@@ -94,12 +94,13 @@ started with. The user has the read/write permissions to the share of the runnin
 and not his own account.</p>
 </dd>
 <dt><strong>Using on a local computer</strong></dt>
-<dd>This class has been tested on a local computer (Windows XP).</dd>
+<dd>This class has been tested on a local computer (Windows XP). Leave domain as None and
+do not specify domain when entering username in this case.</dd>
 <dt><strong>Using for a network domain</strong></dt>
 <dd>This class is being tested for a network domain (I'm setting one up to test).</dd>
 </dl>
 <hr class="docutils" />
-<p>Last Generated : Tue, 23 Aug 2005 04:39:55 GMT</p>
+<p>Last Generated : Mon, 29 Aug 2005 10:33:36 GMT</p>
 </div>
 </div>
 </div>

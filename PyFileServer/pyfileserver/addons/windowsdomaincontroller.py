@@ -13,7 +13,7 @@ Purpose
 
 Usage::
    
-   import pyfileserver.addons.windowsdomaincontroller.SimpleWindowsDomainController
+   from pyfileserver.addons.windowsdomaincontroller import SimpleWindowsDomainController
    domaincontroller = SimpleWindowsDomainController(presetdomain = None, presetserver = None)
    
 where: 

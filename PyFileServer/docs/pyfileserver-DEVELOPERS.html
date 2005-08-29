@@ -351,14 +351,27 @@ from pyfileserver.requestresolver import RequestResolver
 WSGIApp = RequestResolver(InternalWSGIApp)
 </pre>
 <p>The RequestResolver resolves the requested URL to the following values 
-placed in the environ dictionary:</p>
+placed in the environ dictionary. First it resolves the corresponding
+realm:</p>
 <pre class="literal-block">
 url: http://&lt;servername:port&gt;/&lt;approot&gt;/pubshare/PyFileServer/LICENSE
 environ['pyfileserver.mappedrealm'] = /pubshare
+</pre>
+<p>Based on the configuration given, the resource abstraction layer for the
+realm is determined. if no configured abstraction layer is found, the
+default abstraction layer fileabstractionlayer.FilesystemAbstractionLayer()
+is used:</p>
+<pre class="literal-block">
+environ['pyfileserver.resourceAL'] = fileabstractionlayer.MyOwnFilesystemAbstractionLayer()
+</pre>
+<p>The path identifiers for the requested url are then resolved using the
+resource abstraction layer:</p>
+<pre class="literal-block">
 environ['pyfileserver.mappedpath'] = /home/public/share/PyFileServer/LICENSE 
 environ['pyfileserver.mappedURI'] = /pubshare/PyFileServer/LICENSE
 </pre>
-<p>The resolver also resolves any relative paths to its canonical absolute path</p>
+<p>in this case, FilesystemAbstractionLayer resolves any relative paths 
+to its canonical absolute path</p>
 <p>The RequestResolver also resolves any value in the Destination request 
 header, if present, to:</p>
 <pre class="literal-block">
@@ -366,6 +379,7 @@ Destination: http://&lt;servername:port&gt;/&lt;approot&gt;/pubshare/PyFileServe
 environ['pyfileserver.destrealm'] = /pubshare
 environ['pyfileserver.destpath'] = /home/public/share/PyFileServer/LICENSE-dest 
 environ['pyfileserver.destURI'] = /pubshare/PyFileServer/LICENSE
+environ['pyfileserver.destresourceAL'] = fileabstractionlayer.MyOwnFilesystemAbstractionLayer()
 </pre>
 </div>
 <div class="section" id="id1">
@@ -446,25 +460,14 @@ users = dict(({'John Smith': 'YouNeverGuessMe', 'Dan Brown': 'DontGuessMeEither'
 realm = 'Sample Realm'
 domain_controller = SimpleDomainController(users, realm)</dd>
 </dl>
-<p>Domain Controllers must provide the following methods:</p>
-<ul class="simple">
-<li>getDomainRealm(inputRelativeURL, environ): resolves a relative url to the 
-appropriate realm name</li>
-<li>requireAuthentication(realmname, environ): returns a boolean on whether 
-this realm requires authentication or is available for general access</li>
-<li>isRealmUser(realmname, username, environ): returns a boolean on whether 
-this username is valid for the realm</li>
-<li>getRealmUserPassword(realmname, username, environ): returns the password
-for the given username for the realm. Used for digest authentication.</li>
-<li>authRealmUser(realmname, username, password, environ): checks whether this
-username/password pair is valid for the realm. Used for basic authentication.</li>
-</ul>
+<p>Domain Controllers must provide the methods as described in 
+<tt class="docutils literal"><span class="pre">pyfileserver.interfaces.domaincontrollerinterface</span></tt> (<a class="reference" href="interfaces/domaincontrollerinterface.py">interface</a>)</p>
 <p>The environ variable here is the WSGI 'environ' dictionary. It is passed to 
 all methods of the domain controller as a means for developers to pass information
 from previous middleware or server config (if required).</p>
 </div>
-<div class="section" id="id2">
-<h2><a name="id2">Interface</a></h2>
+<div class="section" id="id3">
+<h2><a name="id3">Interface</a></h2>
 <p>Classes</p>
 <ul class="simple">
 <li>HTTPAuthenticator : WSGI Middleware for basic and digest authenticator.</li>
@@ -493,6 +496,8 @@ from previous middleware or server config (if required).</p>
 <p>The PyFileServerDomainController fulfills the requirements of a 
 DomainController as used for authentication with 
 httpauthentication.HTTPAuthenticator for the PyFileServer application</p>
+<p>Domain Controllers must provide the methods as described in 
+<a class="reference" href="interfaces/domaincontrollerinterface.py">domaincontrollerinterface</a></p>
 <p>See requestresolver.py for more information about user mappings in 
 PyFileServer</p>
 </div>
@@ -521,8 +526,7 @@ class RequestServer(object)
 
    constructor :
       __init__(self, propertymanager, 
-                     lockmanager, 
-                     etagproviderfunc)
+                     lockmanager)
 
    main application:      
       __call__(self, environ, start_response)
@@ -550,21 +554,35 @@ class RequestServer(object)
 <p>This module is specific to the PyFileServer application.</p>
 <div class="section" id="supporting-objects">
 <h2><a name="supporting-objects">Supporting Objects</a></h2>
-<p>The RequestServer takes three supporting objects:</p>
+<p>The RequestServer takes two supporting objects:</p>
 <dl class="docutils">
 <dt>propertymanager</dt>
 <dd><p class="first">An object that provides storage for dead properties assigned for webDAV resources.</p>
-<p class="last">See propertylibrary.PropertyManager in propertylibrary.py for a sample implementation
+<p>PropertyManagers must provide the methods as described in 
+<tt class="docutils literal"><span class="pre">pyfileserver.interfaces.propertymanagerinterface</span></tt></p>
+<p class="last">See propertylibrary.PropertyManager for a sample implementation
 using shelve.</p>
 </dd>
 <dt>lockmanager</dt>
 <dd><p class="first">An object that provides storage for locks made on webDAV resources.</p>
-<p class="last">See propertylibrary.LockManager in propertylibrary.py for a sample implementation
+<p>LockManagers must provide the methods as described in 
+<tt class="docutils literal"><span class="pre">pyfileserver.interfaces.lockmanagerinterface</span></tt></p>
+<p class="last">See locklibrary.LockManager for a sample implementation
 using shelve.</p>
 </dd>
-<dt>etagproviderfunc</dt>
-<dd><p class="first">A function object to provide entitytags for a given filename.</p>
-<p class="last">See etagprovider.getETag in etagprovider.py for a sample implementation.</p>
+</dl>
+<p>The RequestServer also uses a resource abstraction layer placed in 
+<tt class="docutils literal"><span class="pre">environ['pyfileserver.resourceAL']</span></tt> by requestresolver.py</p>
+<dl class="docutils">
+<dt>abstractionlayer</dt>
+<dd><p class="first">An object that provides a basic interface to resources.</p>
+<p>This layer allows developers to write layers allowing the application to share
+resources other than filesystems.</p>
+<p>Abstraction Layers must provide the methods as described in 
+<tt class="docutils literal"><span class="pre">pyfileserver.interfaces.abstractionlayerinterface</span></tt></p>
+<p class="last">See fileabstractionlayer.FilesystemAbstractionLayer and
+fileabstractionlayer.ReadOnlyFilesystemAbstractionLayer for sample
+implementations based on filesystems.</p>
 </dd>
 </dl>
 </div>
@@ -589,8 +607,8 @@ using shelve.</p>
 <p>This module consists of miscellaneous support functions for PyFileServer:</p>
 <pre class="literal-block">
 resource list functions
-   recursiveGetPath(dirtorecurs, displaypath, recursfurther, liststore, preadd=True)
-   getDepthActionList(mappedpath, displaypath, depthlevel, preadd=True)
+   recursiveGetPath(resourceAL, dirtorecurs, displaypath, recursfurther, liststore, preadd=True)
+   getDepthActionList(resourceAL, mappedpath, displaypath, depthlevel, preadd=True)
    getCopyDepthActionList(depthactionlist, origpath, origdisplaypath, destpath, destdisplaypath)
 
 URL functions
@@ -604,13 +622,14 @@ interpret content range header
    obtainContentRanges(rangetext, filesize)
 
 evaluate HTTP If-Match, if-None-Match, If-Modified-Since, If-Unmodified-Since headers   
-   evaluateHTTPConditionalsWithoutExceptions(lastmodifiedsecs, entitytag, environ, isnewfile=False)
    evaluateHTTPConditionals(lastmodifiedsecs, entitytag, environ, isnewfile=False)
 
 evaluate webDAV if header   
    getIfHeaderDict(iftext)
    testIfHeaderDict(dictIf, url, locktokenlist, entitytag, returnlocklist, environ)
+   testForLockTokenInIfHeaderDict(dictIf, locktoken, fullurl, headurl)
 </pre>
+<p><em>author note</em>: More documentation here required</p>
 <p>This module is specific to the PyFileServer application.</p>
 </div>
 <hr class="docutils" />
@@ -630,65 +649,78 @@ evaluate webDAV if header
 </tr>
 </tbody>
 </table>
-<p>This module consists of a number of miscellaneous functions for the locks and 
+<p>This module consists of a number of miscellaneous functions for the dead 
 properties features of webDAV.</p>
-<p>It also includes an implementation of a LockManager and a PropertyManager for
-storage of locks and dead properties respectively. These implementations use
-shelve for file storage.</p>
-<p><em>author note</em>: More documentation here required</p>
-<p>See extrequestserver.py for details:</p>
+<p>It also includes an implementation of a PropertyManager for
+storage of dead properties. This implementation use
+shelve for file storage.  See extrequestserver.py for details.</p>
+<p>PropertyManagers must provide the methods as described in 
+<a class="reference" href="interfaces/propertymanagerinterface.py">propertymanagerinterface</a></p>
+<div class="section" id="properties-and-pyfileserver">
+<h2><a name="properties-and-pyfileserver">Properties and PyFileServer</a></h2>
+<p>Properties of a resource refers to the attributes of the resource. A property
+is referenced by the property name and the property namespace. We usually
+refer to the property as <tt class="docutils literal"><span class="pre">{property</span> <span class="pre">namespace}property</span> <span class="pre">name</span></tt></p>
+<p>Properties of resources as defined in webdav falls under three categories:</p>
+<dl class="docutils">
+<dt>Live properties</dt>
+<dd><p class="first">These properties are attributes actively maintained by the server, such as 
+file size, or read permissions. if you are sharing a database record as a 
+resource, for example, the attributes of the record could become the live 
+properties of the resource.</p>
+<p>The webdav specification defines the following properties that could be
+live properties (refer to webdav specification for details):
+{DAV:}creationdate
+{DAV:}displayname
+{DAV:}getcontentlanguage
+{DAV:}getcontentlength
+{DAV:}getcontenttype
+{DAV:}getetag
+{DAV:}getlastmodified
+{DAV:}resourcetype
+{DAV:}source</p>
+<p class="last">These properties are implemented by the abstraction layer.</p>
+</dd>
+<dt>Locking properties </dt>
+<dd><p class="first">They refer to the two webdav-defined properties 
+{DAV:}supportedlock and {DAV:}lockdiscovery</p>
+<p class="last">These properties are implemented by the locking library in
+<tt class="docutils literal"><span class="pre">pyfileserver.locklibrary</span></tt> and dead properties library in
+<tt class="docutils literal"><span class="pre">pyfileserver.propertylibrary</span></tt></p>
+</dd>
+<dt>Dead properties</dt>
+<dd><p class="first">They refer to arbitrarily assigned properties not actively maintained.</p>
+<p class="last">These properties are implemented by the dead properties library in
+<tt class="docutils literal"><span class="pre">pyfileserver.propertylibrary</span></tt></p>
+</dd>
+</dl>
+</div>
+<div class="section" id="id4">
+<h2><a name="id4">Interface</a></h2>
+<p>Classes:</p>
 <pre class="literal-block">
-class LockManager   
-   __init__(self, persiststore)
-   __repr__(self)
-   __del__(self)
-   performInitialization(self)
-   generateLock(self, username, locktype = 'write', lockscope = 'exclusive', lockdepth = 'infinite', lockowner = '', timeout=LOCK_TIME_OUT_DEFAULT)
-   validateLock(self, locktoken)
-   deleteLock(self, locktoken)
-   isTokenLockedByUser(self, locktoken, username)
-   isURLLocked(self, url)
-   getLockProperty(self, locktoken, lockproperty)
-   isURLLockedByToken(self, url, locktoken)
-   getURLLocktokenList(self, url)
-   getURLLocktokenListOfUser(self, url, username)
-   addURLToLock(self, url, locktoken)
-   removeAllLocksFromURL(self, url)
-   refreshLock(self, locktoken, timeout=LOCK_TIME_OUT_DEFAULT)
-   checkLocksToAdd(self, displaypath)
-
-class PropertyManager
-   __init__(self, persiststore)
-   __repr__(self)
-   __del__(self)
-   performInitialization(self)
-   getProperties(self, normurl)
-   getProperty(self, normurl, propertyname)
-   writeProperty(self, normurl, propertyname, propertyvalue)
-   removeProperty(self, normurl, propertyname)
-   removeProperties(self, normurl)
-   copyProperties(self, origurl, desturl)
-
-
-Note: Custom implementations of LockManager and PropertyManager do *not* have
-to implement the following miscellaneous functions   
-
-Miscellaneous functions
-   readTimeoutValueHeader(timeoutvalue)
-   writeProperty(pm, mappedpath, displaypath, propns, propname, propupdatemethod, propvalue, reallydoit=True)
-   getProperty(pm, lm, mappedpath, displaypath, propns, propname, etagprovider)
-   getApplicablePropertyNames(pm, mappedpath, displaypath)
+class PropertyManager(object)
 </pre>
+<p>Misc and Interface methods:</p>
+<pre class="literal-block">
+removeProperties(pm, displaypath)
+copyProperties(pm, displaypath, destdisplaypath)
+writeProperty(pm, resourceAL, mappedpath, displaypath, propns, propname, propupdatemethod, propvalue, reallydoit = True)
+getProperty(pm, lm, resourceAL, mappedpath, displaypath, propns, propname)
+getApplicablePropertyNames(pm, lm, resourceAL, mappedpath, displaypath)
+</pre>
+<p><em>author note</em>: More documentation here required</p>
 <p>This module is specific to the PyFileServer application.</p>
 </div>
+</div>
 <hr class="docutils" />
-<div class="section" id="etagprovider">
-<h1><a name="etagprovider">etagprovider</a></h1>
+<div class="section" id="fileabstractionlayer">
+<h1><a name="fileabstractionlayer">fileabstractionlayer</a></h1>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
 <col class="field-body" />
 <tbody valign="top">
-<tr class="field"><th class="field-name">Module:</th><td class="field-body">pyfileserver.etagprovider</td>
+<tr class="field"><th class="field-name">Module:</th><td class="field-body">pyfileserver.fileabstractionlayer</td>
 </tr>
 <tr class="field"><th class="field-name">Author:</th><td class="field-body">Ho Chun Wei, fuzzybr80(at)gmail.com</td>
 </tr>
@@ -698,16 +730,12 @@ Miscellaneous functions
 </tr>
 </tbody>
 </table>
-<p>Sample ETag provider for PyFileServer. ETag Providers allow developers to
-implement stronger or more content specific etags to be used with 
-PyFileServer, read extrequestserver.py for more details.</p>
-<p>Functions:</p>
-<pre class="literal-block">
-getETag(filePath): Returns the following as entity tags
-   Non-file - md5(pathname)
-   Win32 - md5(pathname)-lastmodifiedtime-filesize
-   Others - inode-lastmodifiedtime-filesize
-</pre>
+<p>This module is specific to the PyFileServer application. It provides two 
+classes <tt class="docutils literal"><span class="pre">FilesystemAbstractionLayer</span></tt> and <tt class="docutils literal"><span class="pre">ReadOnlyFilesystemAbstractionLayer</span></tt>.</p>
+<p>Abstraction Layers must provide the methods as described in 
+<a class="reference" href="interfaces/abstractionlayerinterface.py">abstractionlayerinterface</a></p>
+<p>See extrequestserver.py for more information about resource abstraction layers in 
+PyFileServer</p>
 </div>
 <hr class="docutils" />
 <div class="section" id="loadconfig-primitive">
@@ -775,21 +803,24 @@ Sun Nov  6 08:49:37 1994       ; ANSI C's asctime() format
 <h1><a name="todo">TODO</a></h1>
 <p>This section documents in varying details some of the issues waiting for
 resolution or to be done.</p>
-<div class="section" id="null-resources-locking">
-<h2><a name="null-resources-locking">Null Resources Locking</a></h2>
-<p>Locking of null resources &lt;&gt;, is not supported at the moment. The current
-implementation uses the filesystem level directly to determine whether
-a collection (directory) or resource (file) exists.</p>
-<p>There should be an abstraction level to start with:</p>
-<pre class="literal-block">
-hasURLResource(path): return os.path.exists(path)
-hasCollection(path): return os.path.isdir(path)
-hasResource(path): return os.path.isfile(path)
-</pre>
-<p>and then null resources can be put into the functions as required. They
-also have to be placed into the resource list functions in websupportfunc.
-Various methods have to be made robust to deal correctly with a null 
-resource (non-existing file/directory)</p>
+<div class="section" id="better-support-for-weak-entity-tags">
+<h2><a name="better-support-for-weak-entity-tags">Better support for Weak Entity Tags</a></h2>
+<p>Move entity tag matching from a simple string match to perhaps
+matching from the abstraction layer itself. This allows the 
+abstraction layer to implement weak/semantic entity tags</p>
+</div>
+<div class="section" id="change-of-architecture">
+<h2><a name="change-of-architecture">Change of architecture</a></h2>
+<p>The application was developed initially as a file-sharing 
+application and then converted to a more generic resource-sharing
+application. Hence most of the functionality is based on what
+files would implement.</p>
+<p>Need to shift this so that control on what functionality is active
+is based on the resource layer. Example, if entity tags are not
+implemented, then entity tag functionality (headers, matching)
+should be disabled. If {DAV:}getcontentlanguage is implemented in
+the resource layer, then the server should start returning
+language headers.... etc.</p>
 </div>
 <div class="section" id="gzip-content-encoding">
 <h2><a name="gzip-content-encoding">Gzip Content Encoding</a></h2>
@@ -880,7 +911,7 @@ should eventually complete.</li>
 </dd>
 </dl>
 <hr class="docutils" />
-<p>Last Generated : Tue, 23 Aug 2005 04:39:55 GMT</p>
+<p>Last Generated : Mon, 29 Aug 2005 10:33:36 GMT</p>
 </div>
 </div>
 </div>

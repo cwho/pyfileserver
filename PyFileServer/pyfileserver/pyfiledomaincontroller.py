@@ -13,6 +13,12 @@ The PyFileServerDomainController fulfills the requirements of a
 DomainController as used for authentication with 
 httpauthentication.HTTPAuthenticator for the PyFileServer application
 
+Domain Controllers must provide the methods as described in 
+domaincontrollerinterface_
+
+.. _domaincontrollerinterface : interfaces/domaincontrollerinterface.py
+
+
 See requestresolver.py for more information about user mappings in 
 PyFileServer
 

@@ -1,5 +1,4 @@
 __all__ = ['mainappwrapper', \
-           'etagprovider', 
            'extrequestserver', 
            'processrequesterrorhandler', 
            'httpdatehelper', 
@@ -8,4 +7,6 @@ __all__ = ['mainappwrapper', \
            'pyfiledomaincontroller',
            'loadconfig_primitive',
            'propertylibrary',
+           'locklibrary',
+           'fileabstractionlayer',
            'websupportfuncs']

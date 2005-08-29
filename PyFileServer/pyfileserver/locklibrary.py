@@ -1,3 +1,66 @@
+"""
+locklibrary
+===========
+
+:Module: pyfileserver.locklibrary
+:Author: Ho Chun Wei, fuzzybr80(at)gmail.com
+:Project: PyFileServer, http://pyfilesync.berlios.de/
+:Copyright: Lesser GNU Public License, see LICENSE file attached with package
+
+This module consists of a number of miscellaneous functions for the locks
+features of webDAV.
+
+It also includes an implementation of a LockManager for
+storage of locks. This implementation use
+shelve for file storage. See extrequestserver.py for details.
+
+LockManagers must provide the methods as described in 
+lockmanagerinterface_
+
+.. _lockmanagerinterface : interfaces/lockmanagerinterface.py
+
+
+Classes::
+   
+   class LockManager(object)
+
+Misc methods::
+
+   checkLocksToAdd(lm, displaypath)
+   readTimeoutValueHeader(timeoutvalue)
+
+Interface methods::
+
+   generateLock(lm, username, locktype='write', lockscope='exclusive', lockdepth='infinite', lockowner='', lockheadurl='', timeout=None)
+   deleteLock(lm, locktoken)
+   refreshLock(lm, locktoken, timeout=None)
+   addUrlToLock(lm, url, locktoken)
+   getLockProperty(lm, locktoken, lockproperty)
+   removeAllLocksFromUrl(lm, url)
+   isTokenLockedByUser(lm, locktoken, username)
+   isUrlLocked(lm, url)
+   getUrlLockScope(lm, url)
+   isUrlLockedByToken(lm, url, locktoken)
+   getTokenListForUrl(lm, url)
+   getTokenListForUrlByUser(lm, url, username)
+
+*author note*: More documentation here required
+
+This module is specific to the PyFileServer application.
+
+"""
+
+#@@: Use of shelve means this is only really useful in a threaded environment.
+#    And if you have just a single-process threaded environment, you could get
+#    nearly the same effect with a dictionary of threading.Lock() objects.  Of course,
+#    it would be better to move off shelve anyway, probably to a system with
+#    a directory of per-file locks, using the file locking primitives (which,
+#    sadly, are not quite portable).
+# @@: It would probably be easy to store the properties as pickle objects
+# in a parallel directory structure to the files you are describing.
+# Pickle is expedient, but later you could use something more readable
+# (pickles aren't particularly readable)
+
 
 __docformat__ = 'reStructuredText'
 
@@ -232,8 +295,8 @@ class LockManager(object):
                 self._performInitialization()
             if ('URLLOCK:' + url) in self._dict:
                 urllockdictcopy = self._dict['URLLOCK:' + url].copy()  # use read-only copy here, since validation can delete the dictionary
-                for urllocktoken in urllockdictcopy:
-                    if self._validateLock(urllocktoken):
+                for locktoken in urllockdictcopy:
+                    if self._validateLock(locktoken):
                         if ('LOCKURLS:'+locktoken) in self._dict:       
                             urllockdict = self._dict['LOCKURLS:'+locktoken]
                             if url in urllockdict:
