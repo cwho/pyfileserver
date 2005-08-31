@@ -99,9 +99,73 @@ do not specify domain when entering username in this case.</dd>
 <dt><strong>Using for a network domain</strong></dt>
 <dd>This class is being tested for a network domain (I'm setting one up to test).</dd>
 </dl>
-<hr class="docutils" />
-<p>Last Generated : Mon, 29 Aug 2005 10:33:36 GMT</p>
 </div>
+</div>
+<hr class="docutils" />
+<div class="section" id="simplemysqlabstractionlayer">
+<h1><a name="simplemysqlabstractionlayer">simplemysqlabstractionlayer</a></h1>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field"><th class="field-name">Module:</th><td class="field-body">pyfileserver.addons.simplemysqlabstractionlayer</td>
+</tr>
+<tr class="field"><th class="field-name">Author:</th><td class="field-body">Ho Chun Wei, fuzzybr80(at)gmail.com</td>
+</tr>
+<tr class="field"><th class="field-name">Project:</th><td class="field-body">PyFileServer, <a class="reference" href="http://pyfilesync.berlios.de/">http://pyfilesync.berlios.de/</a></td>
+</tr>
+<tr class="field"><th class="field-name">Copyright:</th><td class="field-body">Lesser GNU Public License, see LICENSE file attached with package</td>
+</tr>
+</tbody>
+</table>
+<p>This module is specific to the PyFileServer application. It provides a 
+classes <tt class="docutils literal"><span class="pre">SimpleMySQLResourceAbstractionLayer</span></tt>.</p>
+<p>Usage:</p>
+<pre class="literal-block">
+(see PyFileServer-example.conf)
+SimpleMySQLResourceAbstractionLayer(host, user, passwd, db)
+
+host - host of database server
+user - username to access database
+passwd - passwd to access database
+db - name of database on database server
+</pre>
+<p>The <tt class="docutils literal"><span class="pre">SimpleMySQLResourceAbstractionLayer</span></tt> provides a very basic, read-only
+resource layer emulation of a MySQL database. It provides the following interface:</p>
+<ul class="simple">
+<li>the root collection shared consists of collections that correspond to table
+names</li>
+<li>in each table collection, there is a resource called &quot;_ENTIRE_CONTENTS&quot;.
+This is a non-collection resource that returns a csv representation of the
+entire table</li>
+<li>if the table has a single primary key, each table record will also appear
+as a non-collection resource in the table collection using the primary key
+value as its name. This resource returns a csv representation of the record
+and will also include the record attributes as live properties with 
+attribute name as property name and table name suffixed with colon as the
+property namespace</li>
+</ul>
+<p>This is a very basic interface and below is a by no means thorough summary of 
+its limitations:</p>
+<ul class="simple">
+<li>Really only supports having numbers or strings as primary keys. The code uses
+a numeric or string comparison that may not hold up if the primary key is 
+a date or some other datatype.</li>
+<li>There is no handling for cases like BLOBs as primary keys or such. Well, there is
+no handling for BLOBs in general.</li>
+<li>When returning contents, it buffers the entire contents! A bad way to return
+large tables. Ideally you would have a FileMixin that reads the database even
+as the application reads the file object....</li>
+<li>It takes too many database queries to return information. 
+Ideally there should be some sort of caching for metadata at least, to avoid
+unnecessary queries to the database.</li>
+</ul>
+<p>Abstraction Layers must provide the methods as described in 
+<a class="reference" href="interfaces/abstractionlayerinterface.py">abstractionlayerinterface</a></p>
+<p>See extrequestserver.py for more information about resource abstraction layers in 
+PyFileServer</p>
+<hr class="docutils" />
+<p>Last Generated : Wed, 31 Aug 2005 07:10:19 GMT</p>
 </div>
 </div>
 </body>

@@ -1,1 +1,1 @@
-__all__ = ['windowsdomaincontroller']
+__all__ = ['windowsdomaincontroller', 'simplemysqlabstractionlayer']

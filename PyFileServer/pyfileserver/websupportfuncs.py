@@ -45,6 +45,8 @@ import re
 import urllib
 
 import httpdatehelper
+from processrequesterrorhandler import HTTPRequestException
+import processrequesterrorhandler
 
 
 def recursiveGetPath(resourceAL, dirtorecurs, displaypath, recursfurther, liststore, preadd=True):   
@@ -227,7 +229,7 @@ def obtainContentRanges(rangetext, filesize):
 #    return '200 OK'
 
 
-def evaluateHTTPConditionals(lastmodified, entitytag, environ, isnewfile=False):
+def evaluateHTTPConditionals(resourceAL, respath, lastmodified, entitytag, environ, isnewfile=False):
     ## Conditions
 
     # An HTTP/1.1 origin server, upon receiving a conditional request that includes both a Last-Modified date
@@ -236,7 +238,7 @@ def evaluateHTTPConditionals(lastmodified, entitytag, environ, isnewfile=False):
     # status of 304 (Not Modified) unless doing so is consistent with all of the conditional header fields in 
     # the request.
 
-    if 'HTTP_IF_MATCH' in environ:
+    if 'HTTP_IF_MATCH' in environ and resourceAL.supportEntityTag(respath):
         if isnewfile:
             raise HTTPRequestException(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
         else:
@@ -253,7 +255,7 @@ def evaluateHTTPConditionals(lastmodified, entitytag, environ, isnewfile=False):
     # (s) in the request. That is, if no entity tags match, then the server MUST NOT return a 304 (Not Modified) 
     # response.
     ignoreifmodifiedsince = False         
-    if 'HTTP_IF_NONE_MATCH' in environ:         
+    if 'HTTP_IF_NONE_MATCH' in environ and resourceAL.supportEntityTag(respath):         
         if isnewfile:
             ignoreifmodifiedsince = True
         else:
@@ -264,13 +266,13 @@ def evaluateHTTPConditionals(lastmodified, entitytag, environ, isnewfile=False):
                     raise HTTPRequestException(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
             ignoreifmodifiedsince = True
 
-    if not isnewfile and 'HTTP_IF_UNMODIFIED_SINCE' in environ:
+    if not isnewfile and 'HTTP_IF_UNMODIFIED_SINCE' in environ and resourceAL.supportLastModified(respath):
         ifunmodtime = httpdatehelper.getsecstime(environ['HTTP_IF_UNMODIFIED_SINCE'])
         if ifunmodtime:
             if ifunmodtime <= lastmodified:
                 raise HTTPRequestException(processrequesterrorhandler.HTTP_PRECONDITION_FAILED)
 
-    if not isnewfile and 'HTTP_IF_MODIFIED_SINCE' in environ and not ignoreifmodifiedsince:
+    if not isnewfile and 'HTTP_IF_MODIFIED_SINCE' in environ and not ignoreifmodifiedsince and resourceAL.supportLastModified(respath):
         ifmodtime = httpdatehelper.getsecstime(environ['HTTP_IF_MODIFIED_SINCE'])
         if ifmodtime:
             if ifmodtime > lastmodified:
@@ -338,7 +340,7 @@ def testForLockTokenInIfHeaderDict(dictIf, locktoken, fullurl, headurl):
             return True
 
 
-def testIfHeaderDict(dictIf, fullurl, locktokenlist, entitytag):
+def testIfHeaderDict(resourceAL, respath, dictIf, fullurl, locktokenlist, entitytag):
 
     if fullurl in dictIf:
         listTest = dictIf[fullurl]
@@ -351,8 +353,10 @@ def testIfHeaderDict(dictIf, fullurl, locktokenlist, entitytag):
         matchfailed = False
 
         for (testflag, checkstyle, checkvalue) in listTestConds:
-            if checkstyle == 'entity':
+            if checkstyle == 'entity' and resourceAL.supportEntityTag(respath):
                 testresult = entitytag == checkvalue  
+            elif checkstyle == 'entity':
+                testresult = testflag
             elif checkstyle == 'locktoken':
                 testresult = checkvalue in locktokenlist
             else: # unknown

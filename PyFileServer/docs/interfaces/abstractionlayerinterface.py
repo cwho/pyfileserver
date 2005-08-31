@@ -38,6 +38,17 @@ class AbstractionLayerInterface(object):
       the function should return the list ['dir1','dir2','file3.txt']
       """
    
+   def getResourceDescriptor(self, respath):
+      """
+      respath - path identifier for the resource
+      
+      returns an array of attribute values (strings) that
+      is to be shown on the directory listing in a browser.
+      
+      for files this would probably be:
+      [ resourcedescription, filesize + " B", prettyprint(lastmodified) ]
+      """
+   
    def getResourceDescription(self, respath):
       """
       respath - path identifier for the resource
@@ -114,13 +125,51 @@ class AbstractionLayerInterface(object):
       deletes a collection corresponding to the resource specified, if
       the collection is empty.
       """
-   
-   def supportRanges(self):
+
+   def supportEntityTag(self, respath):
       """
-      returns True if this abstraction layer supports ranges, False otherwise.
+      respath - path identifier for the resource
+
+      returns True if this resource supports Entity Tags, False otherwise
       
-      A abstraction layer supporting ranges must return a stream for 
+      NO entity tag comparison (headers if, if_match, if_none_match) is done for
+      a resource that does not support entity tags. The Etag header will not be
+      returned for get.
+      """
+
+   def supportLastModified(self, respath):
+      """
+      respath - path identifier for the resource
+
+      returns True if this resource supports Last Modifed, False otherwise
+      
+      NO last modified comparison (headers if_modified_since, if_unmodified_since) is
+      done for a resource that does not support last modified. The Last Modified
+      header will not be returned for get.
+      """
+   
+   def supportContentLength(self, respath):
+      """
+      respath - path identifier for the resource
+
+      returns True if this resource supports Content Length, False otherwise
+      
+      if ContentLength is not supported, no Content-Length header will be returned
+      for get.
+      
+      Content Ranges requires Ranges and ContentLength to be supported.      
+      """
+   
+   def supportRanges(self, respath):
+      """
+      respath - path identifier for the resource
+
+      returns True if this resource supports ranges, False otherwise.
+      
+      A resource supporting ranges must return a stream for 
       ``openResourceForRead()`` that is ``seek()``-able
+      
+      Content Ranges requires Ranges and ContentLength to be supported.
       """
    
    def openResourceForRead(self, respath):

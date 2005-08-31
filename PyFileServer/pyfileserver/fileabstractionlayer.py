@@ -37,6 +37,14 @@ BUFFER_SIZE = 8192
 
 class FilesystemAbstractionLayer(object):
    
+   def getResourceDescriptor(self, respath):
+      resdesc = self.getResourceDescription(respath)
+      ressize = str(self.getContentLength(respath)) + " B"
+      resmod = httpdatehelper.getstrftime(self.getLastModified(respath))
+      if os.path.isdir(respath):      
+         ressize = ""
+      return [resdesc, ressize, resmod]
+   
    def getResourceDescription(self, respath):
       if os.path.isdir(respath):
          return "Directory"
@@ -92,8 +100,17 @@ class FilesystemAbstractionLayer(object):
    
    def deleteCollection(self, respath):
       os.rmdir(respath)
+
+   def supportEntityTag(self, respath):
+      return True
+
+   def supportLastModified(self, respath):
+      return True
    
-   def supportRanges(self):
+   def supportContentLength(self, respath):
+      return True
+   
+   def supportRanges(self, respath):
       return True
    
    def openResourceForRead(self, respath):
@@ -172,7 +189,6 @@ class FilesystemAbstractionLayer(object):
       appProps = []
       #DAV properties for all resources
       appProps.append( ('DAV:','creationdate') )
-      appProps.append( ('DAV:','displayname') )
       appProps.append( ('DAV:','getcontenttype') )
       appProps.append( ('DAV:','resourcetype') )
       appProps.append( ('DAV:','getlastmodified') )   
@@ -198,6 +214,14 @@ class FilesystemAbstractionLayer(object):
 
 
 class ReadOnlyFilesystemAbstractionLayer(object):
+
+   def getResourceDescriptor(self, respath):
+      resdesc = self.getResourceDescription(respath)
+      ressize = str(self.getContentLength(respath)) + " B"
+      resmod = httpdatehelper.getstrftime(self.getLastModified(respath))
+      if os.path.isdir(respath):      
+         ressize = ""
+      return [resdesc, ressize, resmod]
    
    def getResourceDescription(self, respath):
       if os.path.isdir(respath):
@@ -254,8 +278,17 @@ class ReadOnlyFilesystemAbstractionLayer(object):
    
    def deleteCollection(self, respath):
       raise HTTPRequestException(processrequesterrorhandler.HTTP_FORBIDDEN)               
+
+   def supportEntityTag(self, respath):
+      return True
+
+   def supportLastModified(self, respath):
+      return True
    
-   def supportRanges(self):
+   def supportContentLength(self, respath):
+      return True
+   
+   def supportRanges(self, respath):
       return True
    
    def openResourceForRead(self, respath):
@@ -327,7 +360,6 @@ class ReadOnlyFilesystemAbstractionLayer(object):
       appProps = []
       #DAV properties for all resources
       appProps.append( ('DAV:','creationdate') )
-      appProps.append( ('DAV:','displayname') )
       appProps.append( ('DAV:','getcontenttype') )
       appProps.append( ('DAV:','resourcetype') )
       appProps.append( ('DAV:','getlastmodified') )   

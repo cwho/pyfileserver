@@ -194,9 +194,15 @@ class RequestServer(object):
 
         isnewfile = not resourceAL.isResource(mappedpath)
         if not isnewfile:
-            filesize = resourceAL.getContentLength(mappedpath)
-            lastmodified = resourceAL.getLastModified(mappedpath)
-            entitytag = resourceAL.getEntityTag(mappedpath)
+            if resourceAL.supportLastModified(mappedpath):
+                lastmodified = resourceAL.getLastModified(mappedpath)            
+            else:
+                lastmodified = -1
+            
+            if resourceAL.supportEntityTag(mappedpath):
+                entitytag = resourceAL.getEntityTag(mappedpath)         
+            else:
+                entitytag = '[]'
         else:
             lastmodified = -1
             entitytag = '[]'
@@ -312,20 +318,22 @@ a.symlink { font-style: italic; }
         o_list.append("<hr/><table>")
 
         if displaypath == mapdirprefix or displaypath == mapdirprefix + '/':
-            o_list.append('<tr><td colspan="4">Top level share directory</td></tr>')
+            o_list.append('<tr><td colspan="4">Top level share</td></tr>')
         else:
-            o_list.append('<tr><td colspan="4"><a href="' + websupportfuncs.getLevelUpURL(displaypath) + '">Up to higher level directory</a></td></tr>')
+            o_list.append('<tr><td colspan="4"><a href="' + websupportfuncs.getLevelUpURL(displaypath) + '">Up to higher level</a></td></tr>')
 
         for f in resourceAL.getCollectionContents(mappedpath):
             reshref = websupportfuncs.cleanUpURL(displaypath + '/' + f)
             pathname = resourceAL.joinPath(mappedpath, f)
-            if resourceAL.isCollection(pathname):
-                filesize = ""
-            else:
-                filesize = str(resourceAL.getContentLength(pathname))            
-            filemodifieddate = httpdatehelper.getstrftime(resourceAL.getLastModified(pathname))
-            label = resourceAL.getResourceDescription(pathname)            
-            o_list.append('<tr><td><A href="%s">%s</A></td><td></td><td>%s</td><td></td><td>%s</td><td></td><td>%s</td></tr>\n' % (reshref, f, label, filesize, filemodifieddate))
+
+            descriptorarray = resourceAL.getResourceDescriptor(pathname)
+            
+
+            o_list.append('<tr><td><A href="%s">%s</A></td><td>' % (reshref, f))
+            o_list.append('</td><td></td><td>'.join(descriptorarray))
+            o_list.append('</td></tr>\n')
+            
+            #</td><td>%s</td><td></td><td>%s</td><td></td><td>%s</td></tr>\n' % (reshref, f, label, filesize, filemodifieddate))
         o_list.append('</table><hr/>\n%s<BR>\n%s\n</body></html>' % (trailer,httpdatehelper.getstrftime()))
 
 
@@ -344,12 +352,22 @@ a.symlink { font-style: italic; }
         self.evaluateSingleIfConditionalDoException( mappedpath, displaypath, environ, start_response)
         self.evaluateSingleHTTPConditionalsDoException( mappedpath, displaypath, environ, start_response)
 
-        filesize = resourceAL.getContentLength(mappedpath)
-        lastmodified = resourceAL.getLastModified(mappedpath)
-        entitytag = resourceAL.getEntityTag(mappedpath)
+        if resourceAL.supportContentLength(mappedpath):
+            filesize = resourceAL.getContentLength(mappedpath)
+        else:
+            filesize = -1 # flag logic to read until EOF
+        if resourceAL.supportLastModified(mappedpath):
+            lastmodified = resourceAL.getLastModified(mappedpath)            
+        else:
+            lastmodified = -1
+         
+        if resourceAL.supportEntityTag(mappedpath):
+            entitytag = resourceAL.getEntityTag(mappedpath)         
+        else:
+            entitytag = '[]'
 
         ## Ranges      
-        doignoreranges = not resourceAL.supportRanges()
+        doignoreranges = (not resourceAL.supportContentLength(mappedpath)) or (not resourceAL.supportRanges(mappedpath))
         if 'HTTP_RANGE' in environ and 'HTTP_IF_RANGE' in environ and not doignoreranges:
             ifrange = environ['HTTP_IF_RANGE']
             #try as http-date first
@@ -360,7 +378,7 @@ a.symlink { font-style: italic; }
             else:
                 #use as entity tag
                 ifrange = ifrange.strip("\" ")
-                if ifrange != entitytag:
+                if (not resourceAL.supportEntityTag(mappedpath)) or ifrange != entitytag:
                     doignoreranges = True
 
         ispartialranges = False
@@ -382,11 +400,15 @@ a.symlink { font-style: italic; }
         mimetype = resourceAL.getContentType(mappedpath)
 
         responseHeaders = []
-        responseHeaders.append(('Content-Length', rangelength))
-        responseHeaders.append(('Last-Modified', httpdatehelper.getstrftime(lastmodified)))
+        if resourceAL.supportContentLength(mappedpath):
+            responseHeaders.append(('Content-Length', rangelength))
+        if resourceAL.supportLastModified(mappedpath):
+            responseHeaders.append(('Last-Modified', httpdatehelper.getstrftime(lastmodified)))
         responseHeaders.append(('Content-Type', mimetype))
         responseHeaders.append(('Date', httpdatehelper.getstrftime()))
-        responseHeaders.append(('ETag', '"%s"' % entitytag))
+        if resourceAL.supportEntityTag(mappedpath):
+            responseHeaders.append(('ETag', '"%s"' % entitytag))
+ 
         if ispartialranges:
             responseHeaders.append(('Content-Ranges', 'bytes ' + str(rangestart) + '-' + str(rangeend) + '/' + rangelength))
             start_response('206 Partial Content', responseHeaders)   
@@ -1240,12 +1262,20 @@ a.symlink { font-style: italic; }
             entitytag = '[]' # Non-valid entity tag
             locktokenlist = locklibrary.getTokenListForUrlByUser(self._lockmanager, displaypath,environ['pyfileserver.username']) #null resources lock token not implemented yet
         else:
-            lastmodified = resourceAL.getLastModified(mappedpath)
-            entitytag = resourceAL.getEntityTag(mappedpath)         
+            if resourceAL.supportLastModified(mappedpath):
+                lastmodified = resourceAL.getLastModified(mappedpath)            
+            else:
+                lastmodified = -1
+            
+            if resourceAL.supportEntityTag(mappedpath):
+                entitytag = resourceAL.getEntityTag(mappedpath)         
+            else:
+                entitytag = '[]'
+
             locktokenlist = locklibrary.getTokenListForUrlByUser(self._lockmanager, displaypath,environ['pyfileserver.username'])
 
         fullurl = websupportfuncs.constructFullURL(displaypath, environ)
-        if not websupportfuncs.testIfHeaderDict(testDict, fullurl, locktokenlist, entitytag):
+        if not websupportfuncs.testIfHeaderDict(resourceAL, mappedpath, testDict, fullurl, locktokenlist, entitytag):
             raise HTTPRequestException(processrequesterrorhandler.HTTP_PRECONDITION_FAILED) 
 
         if checkLock and locklibrary.isUrlLocked(self._lockmanager, displaypath):
@@ -1265,10 +1295,17 @@ a.symlink { font-style: italic; }
         if not ('HTTP_IF_MODIFIED_SINCE' in environ or 'HTTP_IF_UNMODIFIED_SINCE' in environ or 'HTTP_IF_MATCH' in environ or 'HTTP_IF_NONE_MATCH' in environ):
             return
         if resourceAL.exists(mappedpath):
-            lastmodified = resourceAL.getLastModified(mappedpath)
-            entitytag = resourceAL.getEntityTag(mappedpath)         
+            if resourceAL.supportLastModified(mappedpath):
+                lastmodified = resourceAL.getLastModified(mappedpath)            
+            else:
+                lastmodified = -1
+            
+            if resourceAL.supportEntityTag(mappedpath):
+                entitytag = resourceAL.getEntityTag(mappedpath)         
+            else:
+                entitytag = '[]'
         else:
             lastmodified = -1 # nonvalid modified time
             entitytag = '[]' # Non-valid entity tag
-        websupportfuncs.evaluateHTTPConditionals(lastmodified, entitytag, environ)
+        websupportfuncs.evaluateHTTPConditionals(resourceAL, mappedpath, lastmodified, entitytag, environ)
 
