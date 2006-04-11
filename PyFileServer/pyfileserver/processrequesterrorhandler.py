@@ -233,10 +233,11 @@ def getErrorCodeFromException(e):
 class HTTPRequestException(Exception):
     # @@: This should also take some message value, for a detailed error message.
     #     This would be helpful for debugging.
-    def __init__(self, value, contextinfo=None, srcexception=None):
+    def __init__(self, value, contextinfo=None, srcexception=None, comment=None):
         self.value = value
         self.contextinfo = contextinfo
         self.srcexception = srcexception
+        self.comment = comment
     def __str__(self):
         return repr(self.value)             
 
@@ -265,13 +266,15 @@ class ErrorPrinter(object):
             respcode = interpretErrorException(e)
             datestr = time.strftime('%a, %d %b %Y %H:%M:%S GMT', time.gmtime())
 
-            if evalue in ERROR_RESPONSES:                  
+            if evalue in ERROR_RESPONSES:
                 start_response(respcode, [('Content-Type', 'text/html'), ('Date', datestr)])
 
                 respbody = '<html><head><title>' + respcode + '</title></head><body><H1>' + respcode + '</H1>' 
                 respbody = respbody + ERROR_RESPONSES[evalue] + '<HR>'         
                 if self._server_descriptor:
                     respbody = respbody + self._server_descriptor + '<BR>'
+                if e.comment:
+                    respbody += '<br>\n' + e.comment + '\n'
                 respbody = respbody + datestr + '</body></html>'        
 
                 yield respbody 

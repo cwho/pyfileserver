@@ -173,15 +173,19 @@ class RequestResolver(object):
 
         if 'config_mapping' not in environ['pyfileserver.config']:
             if requestmethod == 'GET': 
-                self.printConfigErrorMessage()
+                self.printConfigErrorMessage(environ, start_response)
             else:
                 raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND)
     
         (mappedrealm, mappedpath, displaypath, resourceAL) = self.resolveRealmURI(environ['pyfileserver.config'], requestpath)            
    
         if mappedrealm is None:
-            raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND)
+            mappedrealm = '/'
+            
+            if 0:
+                raise HTTPRequestException(processrequesterrorhandler.HTTP_NOT_FOUND, comment='No mapped realm for %r from %r' % (requestpath, environ['pyfileserver.config']['resAL_mapping'].keys()))
 
+        environ['pyfileserver.config']['user_mapping'] = {}
         environ['pyfileserver.mappedrealm'] = mappedrealm
         environ['pyfileserver.mappedpath'] = mappedpath 
         environ['pyfileserver.mappedURI'] = displaypath
@@ -290,7 +294,7 @@ class RequestResolver(object):
         return (mapdirprefix, mappedpath, displaypath, resourceAL)    
 
     
-    def printConfigErrorMessage(self):        
+    def printConfigErrorMessage(self, environ, start_response):
         message = """\
 <html><head><title>Welcome to PyFileServer</title></head>
 <body>

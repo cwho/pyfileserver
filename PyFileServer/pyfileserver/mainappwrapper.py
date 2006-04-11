@@ -34,59 +34,33 @@ from pyfileserver.fileabstractionlayer import FilesystemAbstractionLayer
 
 class PyFileApp(object):
 
-    def __init__(self, specifiedconfigfile = None):
-
-        if specifiedconfigfile is None:
-            specifiedconfigfile = os.path.abspath('PyFileServer.conf')
-
-        loadconfig = True
-        try:      
-            from paste import pyconfig
-            servcfg = pyconfig.Config()
-            servcfg.load(specifiedconfigfile)
-        except ImportError:         
-            try:
-                import loadconfig_primitive
-                servcfg = loadconfig_primitive.load(specifiedconfigfile)
-            except:
-                exceptioninfo = traceback.format_exception_only(sys.exc_type, sys.exc_value)
-                exceptiontext = ''
-                for einfo in exceptioninfo:
-                    exceptiontext = exceptiontext + einfo + '\n'   
-                raise RuntimeError('Failed to read PyFileServer configuration file : ' + specifiedconfigfile + '\nDue to ' + exceptiontext)
-        except:
-            exceptioninfo = traceback.format_exception_only(sys.exc_type, sys.exc_value)
-            exceptiontext = ''
-            for einfo in exceptioninfo:
-                exceptiontext = exceptiontext + einfo + '\n'   
-            raise RuntimeError('Failed to read PyFileServer configuration file : ' + specifiedconfigfile + '\nDue to ' + exceptiontext)
-
-
+    def __init__(self, locks_manager, props_manager,
+                 domain_controller,
+                 verbose=0,
+                 server_info=None,
+                 **servcfg):
         self._srvcfg = servcfg
-        
+
+        self.server_info = server_info or {}
         #add default abstraction layer
+        self._srvcfg.setdefault('resAL_library', {})
+        self._srvcfg.setdefault('resAL_mapping', {})
+        self._srvcfg.setdefault('config_mapping', {})
         self._srvcfg['resAL_library']['*'] = FilesystemAbstractionLayer()
         
-        self._infoHeader = '<a href="mailto:%s">Administrator</a> at %s' % (servcfg.get('Info_AdminEmail',''), servcfg.get('Info_Organization',''))
-        self._verbose = servcfg.get('verbose', 0)
+        self._infoHeader = (
+            '<a href="mailto:%s">Administrator</a> at %s'
+            % (self.server_info.get('admin_email', ''),
+               self.server_info.get('organization', '')))
+        self._verbose = verbose
 
-        _locksfile = servcfg.get('locksfile', os.path.abspath('PyFileServer.locks'))
-        _propsfile = servcfg.get('propsfile', os.path.abspath('PyFileServer.dat'))
-
-        _locksmanagerobj = servcfg.get('locksmanager', None) or LockManager(_locksfile)
-        _propsmanagerobj = servcfg.get('propsmanager', None) or PropertyManager(_propsfile)     
-        _domaincontrollerobj = servcfg.get('domaincontroller', None) or PyFileServerDomainController()
-
-
-        # authentication fields
-        _authacceptbasic = servcfg.get('acceptbasic', False)
-        _authacceptdigest = servcfg.get('acceptdigest', True)
-        _authdefaultdigest = servcfg.get('defaultdigest', True)
-
-        application = RequestServer(_propsmanagerobj, _locksmanagerobj)      
-        application = HTTPAuthenticator(application, _domaincontrollerobj, _authacceptbasic, _authacceptdigest, _authdefaultdigest)      
+        application = RequestServer(
+            props_manager, locks_manager)
+        application = HTTPAuthenticator(
+            application, domain_controller)
         application = RequestResolver(application)      
-        application = ErrorPrinter(application, server_descriptor=self._infoHeader) 
+        application = ErrorPrinter(
+            application, server_descriptor=self._infoHeader) 
 
         self._application = application
 
@@ -95,9 +69,9 @@ class PyFileApp(object):
         environ['pyfileserver.config'] = self._srvcfg
         environ['pyfileserver.trailer'] = self._infoHeader
 
-        if self._verbose == 1:
+        if self._verbose and self._verbose <= 1:
             print >> environ['wsgi.errors'], '[',httpdatehelper.getstrftime(),'] from ', environ.get('REMOTE_ADDR','unknown'), ' ', environ.get('REQUEST_METHOD','unknown'), ' ', environ.get('PATH_INFO','unknown'), ' ', environ.get('HTTP_DESTINATION', '')
-        elif self._verbose == 2:      
+        elif self._verbose > 1:
             print >> environ['wsgi.errors'], "<======== Request Environ"
             for envitem in environ.keys():
                 if envitem == envitem.upper():
@@ -105,7 +79,7 @@ class PyFileApp(object):
             print >> environ['wsgi.errors'], "\n"
 
         def _start_response(respcode, headers, excinfo=None):   
-            if self._verbose == 2:
+            if self._verbose > 1:
                 print >> environ['wsgi.errors'], "=========> Response"
                 print >> environ['wsgi.errors'], 'Response code:', respcode
                 headersdict = dict(headers)
@@ -115,7 +89,7 @@ class PyFileApp(object):
             return start_response(respcode, headers, excinfo)
 
         for v in iter(self._application(environ, _start_response)):
-            if self._verbose == 2 and environ['REQUEST_METHOD'] != 'GET':
+            if self._verbose > 1 and environ['REQUEST_METHOD'] != 'GET':
                 print >> environ['wsgi.errors'], v
             yield v 
 

@@ -11,7 +11,7 @@ use_setuptools()
 #manual check for dependencies: PyXML - somehow installer unable to find on PyPI.
 import sys
 
-print "\nChecking manual dependencies...\n"
+#print "\nChecking manual dependencies...\n"
 try:
    import xml.dom.ext
    import xml.dom.ext.reader
@@ -46,9 +46,13 @@ It comes bundled with a simple wsgi webserver.
       license="LGPL",
       install_requires = [],
       packages=find_packages(exclude=[]),
-      package_data={'': ['*.txt', '*.html', '*.conf']},
+      include_package_data=True,
       zip_safe=False,
-      extras_require={}
+      extras_require={},
+      entry_points="""
+      [paste.app_factory]
+      main = pyfileserver.wsgiapp:make_app
+      """
       )
 
 
