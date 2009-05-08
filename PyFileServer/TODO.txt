@@ -5,6 +5,21 @@ TODO
 This section documents in varying details some of the issues waiting for
 resolution or to be done.
 
+Changes for the 'remove_pyxml' branch
+-------------------------------------
+(Mai 2009, martin wendt)
+Removed PyXML dependencies, using lxml now.
+Smoke tested with Vista + DAV Explorer.
+Still open:
+  - real testing, especially litmus and cadaver
+    but also WinXP mappings 
+  - Test setup with lxml
+  - Remove PyXML from README and TUTORIAL 
+  - lxml can surely be used more elegantly for parsing.
+    We could also use it for building the responses. 
+  - Should we increment version to 0.3?
+
+
 Better support for Weak Entity Tags
 -----------------------------------
 
